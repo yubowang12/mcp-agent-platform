@@ -1,0 +1,30 @@
+server:
+  port: 8090
+
+# M3：trace 落盘目录（绝对路径，避免受进程工作目录影响）
+mcp:
+  trace:
+    dir: E:/dsh_working/my_work/demo/logs/trace
+
+spring:
+  ai:
+    ollama:              # 规划型 Host 的本地模型（Ollama，OpenAI 兼容接口）
+      base-url: http://127.0.0.1:11434
+      chat:
+        options:
+          model: qwen2.5:7b
+          temperature: 0.3
+    mcp:
+      client:            # 客户端配置：本 Java 应用作为 MCP Client，连接 Python 微服务
+        enabled: true
+        name: java-orchestrator
+        version: 0.0.1
+        request-timeout: 120s
+        toolcallback:    # 把 MCP 工具转为 ChatClient 可用的 ToolCallback（M2 规划循环使用）
+          enabled: true
+        streamable-http: # 通过 Streamable HTTP 协议连接（Agent 集群的网络通信方式）
+          connections:
+            demo-tools:
+              url: http://127.0.0.1:8001
+            agent-worker:
+              url: http://127.0.0.1:8002

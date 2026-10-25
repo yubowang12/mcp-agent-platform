@@ -1,0 +1,35 @@
+# ---- 构建产物 ----
+target/
+build/
+out/
+*.class
+*.jar
+!demo/**/*.jar
+
+# ---- Python ----
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# ---- 工作区本地缓存（体积大，不入库）----
+.m2/
+.pip-cache/
+.conda_pkgs/
+
+# ---- 运行时数据 / 临时文件 ----
+.tmp/
+tmpxtsovi19/
+demo/logs/
+*.log
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/
+
+# ---- 系统 ----
+Thumbs.db
+.DS_Store
+desktop.ini
