@@ -1,8 +1,13 @@
 server:
   port: 8090
 
-# M3：trace 落盘目录（绝对路径，避免受进程工作目录影响）
+# M3：编排层配置（可被命令行覆盖，如 --mcp.planner.model=qwen2.5:3b）
 mcp:
+  planner:
+    model: qwen2.5:7b
+    task-timeout-seconds: 300
+    llm-timeout-seconds: 60
+    tool-timeout-seconds: 45
   trace:
     dir: E:/dsh_working/my_work/demo/logs/trace
 

@@ -37,6 +37,8 @@ public class TaskContext {
     private String lastAssistantText = "";
     /** 最近一轮的 ChatResponse（act 阶段需要）。 */
     private ChatResponse lastChatResponse;
+    /** 空答案重试是否已用过（只重试一次）。 */
+    private boolean answerRetried;
     private String errorCode;
     private String errorMessage;
 

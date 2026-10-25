@@ -11,7 +11,7 @@
 | 阶段 0 | 技术验证（MCP 协议打通） | ✅ 已完成（2026-10-19） |
 | M1 | 依赖与装配：Ollama starter、toolcallback、工具名前缀 bean | ✅ 已完成（2026-10-22） |
 | M2 | `/api/task` 单步闭环（手动 ReAct 循环 + 超时 + terminate 工具） | ✅ 已完成（2026-10-22，测试跑通） |
-| M3 | 多步编排 + trace 落盘（JSONL） | ⏳ 验证中 |
+| M3 | 多步编排 + trace 落盘（JSONL） | ✅ 已完成（2026-10-25） |
 | M4 | Agent 能力工具集（summarize / translate） | ⬜ 未开始 |
 | M5 | 熔断 / 降级 / 故障注入 | ⬜ 未开始 |
 | M6 | 30 条任务集批量评测 | ⬜ 未开始 |

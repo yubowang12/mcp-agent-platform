@@ -6,6 +6,7 @@ import com.example.mcpdemo.agent.model.TaskTrace;
 import com.example.mcpdemo.agent.model.TraceStep;
 import com.example.mcpdemo.agent.trace.TraceRecorder;
 import com.example.mcpdemo.config.McpToolPrefixConfig;
+import com.example.mcpdemo.config.PlannerProperties;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 /**
@@ -45,9 +51,12 @@ import java.util.stream.Collectors;
 @Slf4j
 public class TaskOrchestrator {
 
-    private static final String MODEL = "qwen2.5:7b";
-    private static final long TASK_TIMEOUT_SECONDS = 300;
-    private static final long TOOL_TIMEOUT_SECONDS = 45;
+    /** LLM 调用线程池：用于实现单次 LLM 调用的超时保护。 */
+    private static final ExecutorService LLM_POOL = Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r, "llm-call");
+        t.setDaemon(true);
+        return t;
+    });
 
     private static final String SYSTEM_PROMPT_TEMPLATE = """
             你是 Agent 集群的调度器。任务：
@@ -67,18 +76,21 @@ public class TaskOrchestrator {
     private final ToolCallback[] tools;
     private final ToolCallingManager toolCallingManager;
     private final TraceRecorder traceRecorder;
+    private final PlannerProperties props;
     /** 前缀名（sanitize 后） -> 原始 server 名，用于 trace.serverKey。 */
     private final Map<String, String> serverNamesByPrefix;
 
     public TaskOrchestrator(ChatClient.Builder chatClientBuilder,
                             List<McpSyncClient> mcpClients,
                             McpToolNamePrefixGenerator mcpToolNamePrefixGenerator,
-                            TraceRecorder traceRecorder) {
+                            TraceRecorder traceRecorder,
+                            PlannerProperties props) {
         this.chatClient = chatClientBuilder.build();
         this.toolCallingManager = ToolCallingManager.builder().build();
         this.traceRecorder = traceRecorder;
+        this.props = props;
 
-        // MCP 工具：前缀化 + 45s 单步超时包装
+        // MCP 工具：前缀化 + 单步超时包装（超时秒数来自配置）
         ToolCallback[] mcpTools = new SyncMcpToolCallbackProvider(
                 (connection, tool) -> true,
                 mcpToolNamePrefixGenerator,
@@ -86,7 +98,7 @@ public class TaskOrchestrator {
 
         List<ToolCallback> allTools = new ArrayList<>();
         for (ToolCallback callback : mcpTools) {
-            allTools.add(new TimeoutToolCallback(callback, TOOL_TIMEOUT_SECONDS));
+            allTools.add(new TimeoutToolCallback(callback, props.toolTimeoutSeconds()));
         }
         // 本地终止工具（与 MCP 无关，不加前缀、不包装超时）
         allTools.addAll(List.of(MethodToolCallbackProvider.builder()
@@ -114,12 +126,12 @@ public class TaskOrchestrator {
 
         // 工具回调同时挂在 ChatOptions 上：模型调用用它，executeToolCalls 也用它按名字解析。
         OllamaChatOptions options = OllamaChatOptions.builder()
-                .model(MODEL)
+                .model(props.model())
                 .toolCallbacks(List.of(tools))
                 .internalToolExecutionEnabled(false)
                 .build();
 
-        Instant deadline = ctx.getStartedAt().plus(Duration.ofSeconds(TASK_TIMEOUT_SECONDS));
+        Instant deadline = ctx.getStartedAt().plus(Duration.ofSeconds(props.taskTimeoutSeconds()));
         try {
             while (ctx.getState() == AgentState.RUNNING
                     && ctx.getSteps().size() < ctx.getMaxSteps()
@@ -130,14 +142,10 @@ public class TaskOrchestrator {
 
                 long llmStart = System.nanoTime();
                 Prompt prompt = new Prompt(ctx.getMessages(), options);
-                ChatResponse response = chatClient.prompt(prompt)
-                        .system(String.format(SYSTEM_PROMPT_TEMPLATE, ctx.getMaxSteps()))
-                        .call()
-                        .chatResponse();
-                // 添加日志
-                assert response != null;
-                log.info(MODEL + "的思考: {}", response.getResult().getOutput().getText());
-                log.info(MODEL + "选择了 {} 个工具调用", response.getResult().getOutput().getToolCalls().size());
+                ChatResponse response = callLlm(prompt, ctx.getMaxSteps());
+                log.info("{}的思考: {}", props.model(), response.getResult().getOutput().getText());
+                log.info("{}选择了 {} 个工具调用", props.model(),
+                        response.getResult().getOutput().getToolCalls().size());
                 long llmLatencyMs = (System.nanoTime() - llmStart) / 1_000_000;
 
                 AssistantMessage assistant = response.getResult().getOutput();
@@ -147,11 +155,34 @@ public class TaskOrchestrator {
                     ctx.setLastAssistantText(text);
                 }
 
-                // 不再调用工具 -> 正常完成
+                // 不再调用工具 -> 结束（空答案先重试一次，仍空则降级，不标 OK）
                 if (assistant.getToolCalls().isEmpty()) {
                     ctx.getMessages().add(assistant);
-                    ctx.setStatus(TaskStatus.OK);
-                    ctx.setFinalAnswer(text != null && !text.isBlank() ? text : ctx.getLastAssistantText());
+                    String answer = text;
+
+                    // ① 空答案重试一次：补一条 user 提示，要求直接给最终答复
+                    if (isBlank(answer) && !ctx.isAnswerRetried()) {
+                        ctx.setAnswerRetried(true);
+                        ctx.getMessages().add(new UserMessage("请基于已有信息给出最终答复，不要调用工具。"));
+                        Prompt retryPrompt = new Prompt(ctx.getMessages(), options);
+                        ChatResponse retryResponse = callLlm(retryPrompt, ctx.getMaxSteps());
+                        AssistantMessage retryMessage = retryResponse.getResult().getOutput();
+                        String retryText = retryMessage.getText();
+                        if (!isBlank(retryText) && retryMessage.getToolCalls().isEmpty()) {
+                            ctx.getMessages().add(retryMessage);
+                            ctx.setLastAssistantText(retryText);
+                            answer = retryText;
+                        }
+                    }
+
+                    // ② 仍空 -> 降级：回填最后一条工具结果，status=DEGRADED + errorCode
+                    if (isBlank(answer)) {
+                        answer = lastToolResult(ctx);
+                        ctx.setStatus(TaskStatus.DEGRADED);
+                        ctx.setErrorCode("EMPTY_ANSWER");
+                    }
+
+                    ctx.setFinalAnswer(isBlank(answer) ? "未能给出答复（模型未返回文本）" : answer);
                     ctx.setState(AgentState.FINISHED);
                     break;
                 }
@@ -193,8 +224,9 @@ public class TaskOrchestrator {
                 }
 
                 if (terminated) {
-                    ctx.setStatus(TaskStatus.OK);
-                    ctx.setFinalAnswer(text != null && !text.isBlank() ? text : ctx.getLastAssistantText());
+                    // 模型调用 terminate 但没给文本时，用最后一条工具结果（terminate 返回"任务结束"）兜底
+                    String answer = isBlank(text) ? lastToolResult(ctx) : text;
+                    ctx.setFinalAnswer(isBlank(answer) ? "任务已结束" : answer);
                     ctx.setState(AgentState.FINISHED);
                     break;
                 }
@@ -209,6 +241,11 @@ public class TaskOrchestrator {
                     ctx.setStatus(TaskStatus.TIMEOUT);
                 }
             }
+        } catch (LlmTimeoutException e) {
+            ctx.setState(AgentState.ERROR);
+            ctx.setStatus(TaskStatus.TIMEOUT);
+            ctx.setErrorCode("LLM_TIMEOUT");
+            ctx.setErrorMessage("规划 LLM 调用超时（" + props.llmTimeoutSeconds() + "s）");
         } catch (Exception e) {
             ctx.setState(AgentState.ERROR);
             ctx.setStatus(TaskStatus.ERROR);
@@ -220,6 +257,24 @@ public class TaskOrchestrator {
         TaskTrace trace = buildTrace(ctx);
         traceRecorder.append(trace);   // 成功/失败都落盘（落盘失败只记日志）
         return trace;
+    }
+
+    /**
+     * 带超时的 LLM 调用：超时则取消任务并抛 {@link LlmTimeoutException}（由 run 统一处理）。
+     */
+    private ChatResponse callLlm(Prompt prompt, int maxSteps) throws Exception {
+        Future<ChatResponse> future = LLM_POOL.submit(() ->
+                chatClient.prompt(prompt).system(systemPrompt(maxSteps)).call().chatResponse());
+        try {
+            return future.get(props.llmTimeoutSeconds(), TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            throw new LlmTimeoutException();
+        }
+    }
+
+    /** 规划 LLM 调用超时。 */
+    private static final class LlmTimeoutException extends RuntimeException {
     }
 
     /**
@@ -235,6 +290,26 @@ public class TaskOrchestrator {
                 .mapToLong(TimeoutToolCallback.LatencySample::latencyMs)
                 .findFirst()
                 .orElse(0L);
+    }
+
+    private static String systemPrompt(int maxSteps) {
+        return String.format(SYSTEM_PROMPT_TEMPLATE, maxSteps);
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
+    }
+
+    /** 取最后一条工具结果预览，作为空答案的兜底。 */
+    private static String lastToolResult(TaskContext ctx) {
+        List<TraceStep> steps = ctx.getSteps();
+        for (int i = steps.size() - 1; i >= 0; i--) {
+            String preview = steps.get(i).resultPreview();
+            if (!isBlank(preview)) {
+                return preview;
+            }
+        }
+        return "";
     }
 
     private static List<ToolResponseMessage.ToolResponse> lastToolResponses(ToolExecutionResult result) {
@@ -287,13 +362,13 @@ public class TaskOrchestrator {
         ctx.setFinalAnswer(answer == null ? "" : answer);
     }
 
-    private static TaskTrace buildTrace(TaskContext ctx) {
+    private TaskTrace buildTrace(TaskContext ctx) {
         Instant finished = Instant.now();
         return new TaskTrace(
                 ctx.getTaskId(),
                 ctx.getTask(),
                 ctx.getStatus(),
-                MODEL,
+                props.model(),
                 ctx.getMaxSteps(),
                 ctx.getSteps().size(),
                 ctx.getStartedAt().toString(),

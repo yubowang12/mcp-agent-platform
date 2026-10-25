@@ -251,7 +251,7 @@ McpToolNamePrefixGenerator prefixGenerator() {
 |---|---|---|---|
 | M1 | 依赖与装配：加 `spring-ai-starter-model-ollama`、`toolcallback.enabled=true`、前缀 bean | `/api/catalog` 返回 `demotools_add` 等前缀化工具；日志显示模型可用 | ✅ 完成（2026-10-22） |
 | M2 | 单步闭环：`/api/task` 能完成"现在几点"这类单工具任务 | 返回正确时间，trace 只有 1 步 | ✅ 完成（2026-10-22） |
-| M3 | 多步编排 + trace：完成"先算…再…"两步任务 | trace 中 ≥2 步且顺序合理 | ⏳ 验证中（代码完成，待验收） |
+| M3 | 多步编排 + trace：完成"先算…再…"两步任务 | trace 中 ≥2 步且顺序合理 | ✅ 完成（2026-10-25，含 JSONL 落盘 + 空答案降级 + 超时配置化） |
 | M4 | 能力工具集：Agent 加 `summarize`，模型能选中它而非 `run_task` | "把这段话压缩成要点"命中 `agentworker_summarize` | ⬜ 未开始 |
 | M5 | 降级与熔断：停掉一个 Server，任务不 500、能降级 | 停 8001 后"现在几点"走降级或明确报错，trace `status=DEGRADED` | ⬜ 未开始 |
 | M6 | 实验脚本：批量跑任务集，输出 CSV/JSON 指标 | 一键跑出成功率/延迟表 | ⬜ 未开始 |

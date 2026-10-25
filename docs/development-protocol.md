@@ -46,19 +46,19 @@
 | M1 步 3：`/api/planner/ping` 调通 Ollama | ✅ 完成（qwen2.5:3b 正常返回） |
 | M1 步 4：练习 A（subtract 工具）+ 全量验收 | ✅ 完成（2026-10-22，`demotools_subtract` 自动出现在 catalog；get-time/ping/planner/ping 回归通过） |
 | M2：`/api/task` 单步闭环 | ✅ 完成（2026-10-22，`TaskOrchestrator` 手动 ReAct 循环 + 45s 工具超时 + 300s 任务超时 + terminate 工具；单步任务测试跑通） |
-| M3：多步编排 + trace 落盘 | ⏳ 验证中（代码完成：TraceRecorder + 每步耗时采样；待多步任务与 JSONL 落盘验收） |
+| M3：多步编排 + trace 落盘 | ✅ 完成（2026-10-25：多步任务 + JSONL 落盘 + 空答案降级 + LLM 60s 超时配置化 + 测试升级） |
 
 > 2026-10-22 备注：M1 关闭时观察到一个待改进点——`/api/servers` 返回的 version 为空（`Implementation.version()` 在 Python 端未上报）。不影响功能，登记到后续待办。
 
-## M3 收尾验收标准（用户补充，待执行）
+## M3 收尾验收标准（已完成，2026-10-25）
 
-1. **空答案不以 OK 落盘**：finalAnswer 为空时重试一次（补一轮"请基于已有信息给出最终答复"）；仍空则回填最后一条工具结果，`status=DEGRADED`、`errorCode=EMPTY_ANSWER`。
-2. **超时与配置化**：每次 LLM 调用加 60s 超时；总 deadline、模型名、trace 目录全部配置化（`mcp.planner.*` 前缀）。
-3. **测试升级**：从 `assertNotNull` 升级为断言 `status / usedSteps / finalAnswer`；补一条"无工具可用"用例（手工构造空 client 列表或 mock ChatClient）。
+1. ✅ **空答案不以 OK 落盘**：空答案重试一次；仍空则回填最后一条工具结果，`status=DEGRADED`、`errorCode=EMPTY_ANSWER`。
+2. ✅ **超时与配置化**：LLM 调用 60s 超时（`LlmTimeoutException` → `TIMEOUT` + `LLM_TIMEOUT`）；`mcp.planner.*` 配置化（model / task-timeout / llm-timeout / tool-timeout）。
+3. ✅ **测试升级**：`TaskOrchestratorTest` 断言 `status/usedSteps/finalAnswer`；新增 `NoToolsAvailableTest`（Mockito 纯单测，已实跑通过）。
 
 ## 后续安排
 
-1. **基线整理**：`.gitignore` + 首次提交；文档回填（README / 本文件 / learning-plan）。
-2. **M3 收尾**：按上面 3 条验收标准完成并验证。
+1. ~~基线整理~~（✅ 2026-10-25：`.gitignore` + 首次提交 + 文档回填）
+2. ~~M3 收尾~~（✅ 2026-10-25）
 3. **补课验收**：U4（LLM Agent 基础）、U6（Spring Boot / Spring AI 精读）——代码已先行，学习记录需补齐（答辩必问）。
 4. 然后进入 **M4**（Agent 能力工具集）→ **M5**（熔断/降级/故障注入）→ **M6**（30 条任务集评测）。

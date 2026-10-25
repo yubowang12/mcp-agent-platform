@@ -2,6 +2,7 @@ package com.example.mcpdemo;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 /**
  * MCP 技术验证 Demo 入口。
@@ -11,6 +12,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  *   - agent-worker : Python 智能体微服务（run_task / ping）
  */
 @SpringBootApplication
+@ConfigurationPropertiesScan
 public class McpDemoApplication {
 
     public static void main(String[] args) {
