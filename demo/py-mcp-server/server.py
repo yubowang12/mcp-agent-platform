@@ -1,11 +1,12 @@
 """工具微服务示例：一个通过 MCP 协议暴露工具能力的 Python MCP Server。
 
-启动方式（stdio 传输，由 MCP 客户端拉起）：
+启动方式（Streamable HTTP，独立进程监听 8001）：
     python server.py
 
 暴露的工具：
     - get_time: 返回服务器当前时间
     - add:      两数相加
+    - subtract: 两数相减
 """
 
 from datetime import datetime

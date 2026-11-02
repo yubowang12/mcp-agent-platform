@@ -11,9 +11,9 @@
 | U1 | MCP 协议全景 | Host/Client/Server、工具/资源/提示、生命周期、stdio vs HTTP | 一切的基础 | ✅ 已完成 |
 | U2 | Python 进阶补充 | 类、装饰器、类型注解、asyncio 异步编程 | Python 微服务 | ✅ 已完成 |
 | U3 | 读懂 mcp SDK 与 demo | 读源码 + 逐行理解 demo 微服务 + 重写练习 | 现有 demo | ✅ 已完成 |
-| U4 | LLM Agent 基础 | LLM API、提示词、工具调用、Agent 循环（先写无框架最小 agent） | Python Agent 微服务 | ⏳ 待补课验收（代码已先行） |
-| U5 | 微服务治理概念 | 注册发现、网关、健康检查、熔断限流（概念 + 设计图） | 注册中心/网关/治理 | ⬜ |
-| U6 | Spring Boot / Spring AI 精读 | starter、auto-config、配置绑定、`McpSyncClient` 装配 | Java 编排层 | ⏳ 待补课验收（代码已先行） |
+| U4 | LLM Agent 基础 | LLM API、提示词、工具调用、Agent 循环（先写无框架最小 agent） | Python Agent 微服务 | ✅ 已完成（2026-10-27 补课验收） |
+| U5 | 微服务治理概念 | 注册发现、网关、健康检查、熔断限流（概念 + 设计图） | 注册中心/网关/治理 | ✅ 已完成（2026-10-30 验收 8/10） |
+| U6 | Spring Boot / Spring AI 精读 | starter、auto-config、配置绑定、`McpSyncClient` 装配 | Java 编排层 | ✅ 已完成（2026-10-27 补课验收） |
 | U7 | 工程化与正式骨架 | Maven 多模块、配置分层、日志、测试 | 正式项目搭建 | ⬜ |
 
 > 说明：U5 与 U2/U3/U4 无强依赖，可与它们并行或按需调整顺序。U1 是总纲，必须先学。
@@ -22,6 +22,10 @@
 > L2 验收通过（2026-10-20）：手写 ToolRegistry（装饰器 + pydantic 动态 schema）与真实 SDK 机制对齐；asyncio 五问全对（8.5/10）。
 > L3 验收通过（2026-10-20）：initialize 三步握手（自报→应答→通知+缓存）理解正确；工具名正则约束与 yml key 权威性基本到位；练习 A（subtract 工具）并入 M1 验证"Java 零改动发现新工具"。
 > 补课安排（2026-10-25）：U4/U6 因 M1~M3 先行实现，需补一次学习验收（题目 + 笔记），避免答辩被问"这块学过吗"。
+> U4 补课验收通过（2026-10-27）：消息角色 / tool_calls 结构 / ReAct 三步 / think-act 映射理解到位（8/10）；纠正"工具提升训练精度""LLM 不具备技能"等表述；重复调用检测列为 M5 优化点。
+> U6 补课验收通过（2026-10-27）：starter / 条件注解 / 装配链 / Builder / toolcallback / @ConfigurationProperties 基本到位（8/10）；补充了"配置绑定→传输层→客户端→握手→bean→List 注入"的完整链路。
+> M4 实践补记（2026-10-28）：M4 的核心技术是"工具描述工程"（写"不做什么"、参数默认值、边界反例、规划器优先策略），没有单独开学习单元；相关内容已在 `demo/py-agent/agent.py` 与 `TaskOrchestrator` 系统提示里落地。答辩前建议按 M4 验收记录补一次 15 分钟过目（OpenAI Function calling 指南 / MCP Tools 章节 / Anthropic "writing effective tools"）。
+> U5 验收通过（2026-10-30，8/10）：三态迁移、连续失败 vs 滑动窗口的取舍、半开"灰度放量"、fail-fast 与降级启动的代价都答到位。纠正两处：① **"重试是熔断恢复的前提"错**——恢复由半开探测的真实请求决定，熔断打开时重试是反模式（打到已知坏服务，加重故障）；② **熔断粒度按"故障相关性"而非工具数量**——同一 server 的工具共享进程/网络/模型，一个挂了通常整台不健康。补充概念：慢调用比例（slow call rate，通常先于错误率恶化）、隔舱（bulkhead，本项目 `TimeoutToolCallback` 的独立线程池就是雏形）、半开要限制并发（避免惊群）。
 
 ## 工作流程（每个单元）
 

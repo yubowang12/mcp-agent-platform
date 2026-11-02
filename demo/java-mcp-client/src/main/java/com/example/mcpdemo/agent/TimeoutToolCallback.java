@@ -3,8 +3,6 @@ package com.example.mcpdemo.agent;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -12,24 +10,22 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * 给单个工具调用加 45s 超时保护，并记录每次调用的耗时（供 trace 使用）。
+ * 给单个工具调用加超时保护，并把结果记到 {@link ToolCallRecorder}。
  *
- * <p>超时/异常不向上抛出，而是返回错误文本——由模型决定换工具或放弃，
- * 同时编排器把该步记为失败（ok=false）。
+ * <p>失败判定只看<b>可判定的事实</b>，不再依赖错误文本前缀：
+ * <ul>
+ *   <li>超时：本包装器的 {@link TimeoutException} → {@link ToolCallRecorder#TOOL_TIMEOUT}；</li>
+ *   <li>调用失败：Spring AI 的 {@code SyncMcpToolCallback} 在 MCP 返回 {@code isError=true}
+ *       或传输异常时抛 {@code ToolExecutionException} → {@link ToolCallRecorder#TOOL_ERROR}。</li>
+ * </ul>
  *
- * <p>计时说明：{@link #call} 运行在请求线程，耗时记入请求线程的 ThreadLocal；
- * 真正执行工具的是线程池中的工作线程。编排器每轮开始前需 {@link #drain()} 清空，
- * 避免同一线程处理多个请求时残留旧数据。
+ * <p>为了不改变规划器的对话体验，失败仍以错误文本返回（模型可据此换工具或放弃）；
+ * 结构化的成败信息走 {@link ToolCallRecorder} 旁路给编排器。
+ *
+ * <p>包装顺序：{@link CircuitBreakingToolCallback} 在外、本类在内——熔断器需要在
+ * "真的调用了"时才知道成败，超时也算失败。
  */
 public class TimeoutToolCallback implements ToolCallback {
-
-    /** 单次工具调用的耗时采样（toolName 为给模型看的前缀化名字）。 */
-    public record LatencySample(String toolName, long latencyMs) {
-    }
-
-    /** 请求线程内暂存本轮工具调用耗时。 */
-    private static final ThreadLocal<List<LatencySample>> LATENCIES =
-            ThreadLocal.withInitial(ArrayList::new);
 
     private static final ExecutorService POOL = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "tool-timeout");
@@ -57,32 +53,40 @@ public class TimeoutToolCallback implements ToolCallback {
         Future<String> future = null;
         try {
             future = POOL.submit(() -> delegate.call(toolInput));
-            return future.get(timeoutSeconds, TimeUnit.SECONDS);
+            String result = future.get(timeoutSeconds, TimeUnit.SECONDS);
+            record(toolName, start, true, null);
+            return result;
         } catch (TimeoutException e) {
             if (future != null) {
                 future.cancel(true);
             }
+            record(toolName, start, false, ToolCallRecorder.TOOL_TIMEOUT);
             return "工具调用超时（" + timeoutSeconds + "s），未返回结果。";
         } catch (Exception e) {
             if (future != null) {
                 future.cancel(true);
             }
-            return "工具调用失败：" + e.getMessage();
-        } finally {
-            LATENCIES.get().add(new LatencySample(
-                    toolName, (System.nanoTime() - start) / 1_000_000));
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            record(toolName, start, false, ToolCallRecorder.TOOL_ERROR);
+            return "工具调用失败：" + rootMessage(e);
         }
     }
 
-    /** 取走当前线程已记录的全部耗时样本（取走即清空）。 */
-    public static List<LatencySample> drain() {
-        List<LatencySample> samples = new ArrayList<>(LATENCIES.get());
-        LATENCIES.get().clear();
-        return samples;
+    private static void record(String toolName, long start, boolean ok, String errorCode) {
+        ToolCallRecorder.record(toolName, (System.nanoTime() - start) / 1_000_000, ok, errorCode);
     }
 
-    /** 只清空当前线程的耗时样本（异常路径兜底）。 */
-    public static void clear() {
-        LATENCIES.get().clear();
+    /**
+     * 取最内层异常的消息：线程池会把异常包成 {@code ExecutionException}，
+     * Spring AI 又包一层 {@code ToolExecutionException}，直接用外层消息会很难读。
+     */
+    private static String rootMessage(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null && current.getCause() != current) {
+            current = current.getCause();
+        }
+        return current.getMessage() != null ? current.getMessage() : current.getClass().getSimpleName();
     }
 }

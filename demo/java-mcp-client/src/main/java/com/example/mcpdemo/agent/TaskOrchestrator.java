@@ -7,6 +7,7 @@ import com.example.mcpdemo.agent.model.TraceStep;
 import com.example.mcpdemo.agent.trace.TraceRecorder;
 import com.example.mcpdemo.config.McpToolPrefixConfig;
 import com.example.mcpdemo.config.PlannerProperties;
+import com.example.mcpdemo.resilience.CircuitBreakerRegistry;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
 import lombok.extern.slf4j.Slf4j;
@@ -70,6 +71,8 @@ public class TaskOrchestrator {
             - 每步只能调一个工具，不要并行猜测多个；
             - 调用前先确认参数齐全；缺参数则向用户追问；
             - 最多 %d 步，超出则基于已有信息作答。
+            - 自己能完成的写作、解释、建议类任务，直接回答，不要调用工具
+            - 最终答复只给结果，不要复述输入
             """;
 
     private final ChatClient chatClient;
@@ -77,6 +80,7 @@ public class TaskOrchestrator {
     private final ToolCallingManager toolCallingManager;
     private final TraceRecorder traceRecorder;
     private final PlannerProperties props;
+    private final CircuitBreakerRegistry circuitBreakers;
     /** 前缀名（sanitize 后） -> 原始 server 名，用于 trace.serverKey。 */
     private final Map<String, String> serverNamesByPrefix;
 
@@ -84,29 +88,14 @@ public class TaskOrchestrator {
                             List<McpSyncClient> mcpClients,
                             McpToolNamePrefixGenerator mcpToolNamePrefixGenerator,
                             TraceRecorder traceRecorder,
-                            PlannerProperties props) {
+                            PlannerProperties props,
+                            CircuitBreakerRegistry circuitBreakers) {
         this.chatClient = chatClientBuilder.build();
         this.toolCallingManager = ToolCallingManager.builder().build();
         this.traceRecorder = traceRecorder;
         this.props = props;
-
-        // MCP 工具：前缀化 + 单步超时包装（超时秒数来自配置）
-        ToolCallback[] mcpTools = new SyncMcpToolCallbackProvider(
-                (connection, tool) -> true,
-                mcpToolNamePrefixGenerator,
-                mcpClients.toArray(McpSyncClient[]::new)).getToolCallbacks();
-
-        List<ToolCallback> allTools = new ArrayList<>();
-        for (ToolCallback callback : mcpTools) {
-            allTools.add(new TimeoutToolCallback(callback, props.toolTimeoutSeconds()));
-        }
-        // 本地终止工具（与 MCP 无关，不加前缀、不包装超时）
-        allTools.addAll(List.of(MethodToolCallbackProvider.builder()
-                .toolObjects(new TerminateTool())
-                .build()
-                .getToolCallbacks()));
-        this.tools = allTools.toArray(ToolCallback[]::new);
-
+        this.circuitBreakers = circuitBreakers;
+        // 先建“前缀 -> server 名”映射：给工具包熔断器时要按 server 取熔断器
         Map<String, String> serverNames = new LinkedHashMap<>();
         for (McpSyncClient client : mcpClients) {
             McpSchema.Implementation info = client.getServerInfo();
@@ -115,6 +104,26 @@ public class TaskOrchestrator {
             }
         }
         this.serverNamesByPrefix = Map.copyOf(serverNames);
+
+        // MCP 工具：前缀化 → 超时包装 → 熔断包装（熔断必须在外层，超时才算失败）
+        ToolCallback[] mcpTools = new SyncMcpToolCallbackProvider(
+                (connection, tool) -> true,
+                mcpToolNamePrefixGenerator,
+                mcpClients.toArray(McpSyncClient[]::new)).getToolCallbacks();
+
+        List<ToolCallback> allTools = new ArrayList<>();
+        for (ToolCallback callback : mcpTools) {
+            String prefixedName = callback.getToolDefinition().name();
+            ToolCallback withTimeout = new TimeoutToolCallback(callback, props.toolTimeoutSeconds());
+            allTools.add(new CircuitBreakingToolCallback(
+                    withTimeout, circuitBreakers.get(serverKeyOf(prefixedName))));
+        }
+        // 本地终止工具（与 MCP 无关，不加前缀、不包装超时/熔断）
+        allTools.addAll(List.of(MethodToolCallbackProvider.builder()
+                .toolObjects(new TerminateTool())
+                .build()
+                .getToolCallbacks()));
+        this.tools = allTools.toArray(ToolCallback[]::new);
     }
 
     /**
@@ -138,14 +147,17 @@ public class TaskOrchestrator {
                     && Instant.now().isBefore(deadline)) {
 
                 // 每轮开始清空当前线程的耗时样本，防止上一轮/上一请求残留
-                TimeoutToolCallback.clear();
+                ToolCallRecorder.clear();
 
                 long llmStart = System.nanoTime();
                 Prompt prompt = new Prompt(ctx.getMessages(), options);
                 ChatResponse response = callLlm(prompt, ctx.getMaxSteps());
                 log.info("{}的思考: {}", props.model(), response.getResult().getOutput().getText());
-                log.info("{}选择了 {} 个工具调用", props.model(),
-                        response.getResult().getOutput().getToolCalls().size());
+                log.info("{}选择了 {} 个工具调用, 分别是: {}", props.model(),
+                        response.getResult().getOutput().getToolCalls().size(),
+                        response.getResult().getOutput().getToolCalls().stream()
+                                .map(AssistantMessage.ToolCall::name)
+                                .collect(Collectors.joining(", ")));
                 long llmLatencyMs = (System.nanoTime() - llmStart) / 1_000_000;
 
                 AssistantMessage assistant = response.getResult().getOutput();
@@ -190,9 +202,9 @@ public class TaskOrchestrator {
                 // 执行 tool_calls 并回填对话历史。
                 // call() 在请求线程上计时；executeToolCalls 同步阻塞，返回即本轮工具全部执行完毕，
                 // 因此这里立刻 drain() 取走本轮样本（取走即清空）。
-                TimeoutToolCallback.clear();   // 双保险：确保本轮从零开始
+                ToolCallRecorder.clear();   // 双保险：确保本轮从零开始
                 ToolExecutionResult execution = toolCallingManager.executeToolCalls(prompt, response);
-                List<TimeoutToolCallback.LatencySample> latencySamples = TimeoutToolCallback.drain();
+                List<ToolCallRecorder.CallRecord> callRecords = ToolCallRecorder.drain();
 
                 ctx.getMessages().clear();
                 ctx.getMessages().addAll(execution.conversationHistory());
@@ -206,16 +218,18 @@ public class TaskOrchestrator {
                 boolean terminated = false;
                 int stepIndex = 0;
                 for (ToolResponseMessage.ToolResponse tr : lastToolResponses(execution)) {
-                    boolean ok = !isErrorResult(tr.responseData());
+                    // 成败来自包装层记录的事实（超时/异常），不再扫描错误文本
+                    ToolCallRecorder.CallRecord record = recordOf(callRecords, stepIndex, tr.name());
                     ctx.getSteps().add(new TraceStep(
                             ctx.getSteps().size() + 1,
                             tr.name(),
                             serverKeyOf(tr.name()),
                             argsById.get(tr.id()),
-                            ok,
-                            latencyOf(latencySamples, stepIndex, tr.name()),
+                            record.ok(),
+                            record.latencyMs(),
                             preview(tr.responseData()),
-                            ok ? null : tr.responseData(),
+                            record.ok() ? null : tr.responseData(),
+                            record.errorCode(),
                             llmLatencyMs));
                     stepIndex++;
                     if (TerminateTool.TOOL_NAME.equals(tr.name())) {
@@ -254,6 +268,7 @@ public class TaskOrchestrator {
         }
 
         fillFallbackAnswer(ctx);
+        markDegradedIfNeeded(ctx);     // 有失败步骤但仍有答案 → DEGRADED
         TaskTrace trace = buildTrace(ctx);
         traceRecorder.append(trace);   // 成功/失败都落盘（落盘失败只记日志）
         return trace;
@@ -278,18 +293,18 @@ public class TaskOrchestrator {
     }
 
     /**
-     * 取某个工具调用的耗时：优先按执行顺序配对，名字不一致时按名字查找，兜底 0。
+     * 取某次工具调用的采样：优先按执行顺序配对，名字不一致时按名字查找；
+     * 找不到（如未包装的 terminate 工具）按“成功、0ms”处理。
      */
-    private static long latencyOf(List<TimeoutToolCallback.LatencySample> samples,
-                                  int index, String toolName) {
-        if (index < samples.size() && samples.get(index).toolName().equals(toolName)) {
-            return samples.get(index).latencyMs();
+    private static ToolCallRecorder.CallRecord recordOf(List<ToolCallRecorder.CallRecord> records,
+                                                           int index, String toolName) {
+        if (index < records.size() && records.get(index).toolName().equals(toolName)) {
+            return records.get(index);
         }
-        return samples.stream()
-                .filter(s -> s.toolName().equals(toolName))
-                .mapToLong(TimeoutToolCallback.LatencySample::latencyMs)
+        return records.stream()
+                .filter(r -> r.toolName().equals(toolName))
                 .findFirst()
-                .orElse(0L);
+                .orElseGet(() -> new ToolCallRecorder.CallRecord(toolName, 0L, true, null));
     }
 
     private static String systemPrompt(int maxSteps) {
@@ -322,14 +337,6 @@ public class TaskOrchestrator {
             return toolResponseMessage.getResponses();
         }
         return List.of();
-    }
-
-    /** 工具结果是否是我们包装层/框架产生的错误文本。 */
-    private static boolean isErrorResult(String data) {
-        if (data == null) {
-            return true;
-        }
-        return data.startsWith("工具调用超时") || data.startsWith("工具调用失败");
     }
 
     /** 按前缀还原所属 server 名（trace 用）。 */
@@ -376,10 +383,34 @@ public class TaskOrchestrator {
                 Duration.between(ctx.getStartedAt(), finished).toMillis(),
                 ctx.getFinalAnswer(),
                 List.copyOf(ctx.getSteps()),
-                null,   // degraded：M2 未实现
+                ctx.getStatus() == TaskStatus.DEGRADED,
                 ctx.getErrorCode(),
                 ctx.getErrorMessage(),
+                List.copyOf(ctx.getDegradedSteps()),
                 null,   // tokenUsage：M2 未采集
                 null);  // retryCount：M2 未实现
+    }
+
+    /**
+     * 任一步骤失败且最终仍有答案 → 任务降级（用户定：否则只要有产出就看不出故障）。
+     *
+     * <p>只处理 {@code OK}：{@code TIMEOUT}/{@code MAX_STEPS} 已经表达失败，不覆盖；
+     * {@code EMPTY_ANSWER} 已在循环内置为 {@code DEGRADED}。
+     *
+     * <p>包级可见，便于纯单测（不需要 MCP / Ollama）。
+     */
+    static void markDegradedIfNeeded(TaskContext ctx) {
+        if (ctx.getStatus() != TaskStatus.OK) {
+            return;
+        }
+        List<TraceStep> failed = ctx.getSteps().stream().filter(step -> !step.ok()).toList();
+        if (failed.isEmpty()) {
+            return;
+        }
+        TraceStep first = failed.get(0);
+        ctx.setStatus(TaskStatus.DEGRADED);
+        ctx.setErrorCode(first.errorCode());
+        ctx.setErrorMessage("第 " + first.step() + " 步工具调用失败（" + first.errorCode() + "）");
+        ctx.setDegradedSteps(failed.stream().map(TraceStep::step).toList());
     }
 }

@@ -1,7 +1,7 @@
 # 编排层架构设计：规划型 Host（方案 B）
 
 > 项目：基于 MCP 协议的微服务化多智能体协作平台设计与实现
-> 状态：设计定稿，待实现
+> 状态：实现中（M1~M5 已落地，2026-11-02 全量测试 24/24 通过；M6 待实现）
 > 前置：阶段 0 技术验证已完成（见 `tech-validation-report.md`）
 > 本文取代"哑编排"形态，作为正式实现的设计基线
 
@@ -117,20 +117,25 @@ McpToolNamePrefixGenerator prefixGenerator() {
 > 已核实：`spring.ai.mcp.client.toolcallback.enabled=true` 时，`McpToolCallbackAutoConfiguration` 自动注册 `SyncMcpToolCallbackProvider` 与 `AsyncMcpToolCallbackProvider`。**具体注入方法名以实际 jar 为准**（ChatClient.Builder 的 `defaultTools` / `defaultToolCallbacks`）。
 
 
-系统提示词（草案，中文——qwen2.5 对中文描述的指令遵循更好）：
+系统提示词（与 `TaskOrchestrator.SYSTEM_PROMPT_TEMPLATE` 同步，2026-10-28）：
 
 ```
 你是 Agent 集群的调度器。任务：
 1) 把用户任务拆成最小可执行步骤；
 2) 每步只选一个工具，参数必须符合该工具的 schema；
 3) 信息足够时立即停止调用，直接给出最终答复；
-4) 工具描述里写明了能力边界，越界的需求不要硬套工具，直接说明原因。
+4) 工具描述里写明了能力边界，越界的需求不要硬套工具，直接说明原因；
+5) 任务完成或无法继续推进时，调用 terminate 工具结束任务。
 
 规则：
 - 每步只能调一个工具，不要并行猜测多个；
 - 调用前先确认参数齐全；缺参数则向用户追问；
 - 最多 {maxSteps} 步，超出则基于已有信息作答。
+- 自己能完成的写作、解释、建议类任务，直接回答，不要调用工具
+- 最终答复只给结果，不要复述输入
 ```
+
+> 实现备注（2026-10-28，M4）：最后两条规则是 M4 的关键修正。没有它们时，"写一份自我介绍"这类纯生成任务会被委派给 `run_task`，一次任务变成 3 次模型调用（7b 规划 → 3b 执行 → 7b 收尾）、耗时 35s，且最终答案由更弱的执行模型产出；加上后同一条任务变成 1 次 7b 调用、16.5s，且不再编造个人信息。数据见 `development-protocol.md` 的 M4 验收记录。
 
 **关键**：规划器能看到的只有工具 `description` 与 `inputSchema`。所以**工具描述的质量直接决定规划质量**——见第六节。
 
@@ -144,8 +149,8 @@ McpToolNamePrefixGenerator prefixGenerator() {
                     └─────────────────────────────────────────┘
   终止条件（任一满足即退出）：
     1. 模型返回纯文本答复（无 tool_calls）
-    2. 步数 ≥ maxSteps（默认 5）
-    3. 总耗时 ≥ deadline（默认 120s）
+    2. 步数 ≥ maxSteps（默认 10）
+    3. 总耗时 ≥ deadline（默认 300s）
     4. 规划 LLM 报错 / 返回非法结构（进入降级，见 4.7）
 ```
 
@@ -185,9 +190,13 @@ McpToolNamePrefixGenerator prefixGenerator() {
 | 触发 | 行为 |
 |---|---|
 | 规划 LLM 超时/报错 | 回退到**规则编排**：按关键词路由（如任务含"时间"→`get_time`），命中则执行，否则直接返回错误说明 |
-| 某 Agent 连续 N=3 次失败 | 熔断打开：从 Catalog 摘除，`/api/catalog` 标记 `healthy=false`；冷却 30s 后半开 |
-| 单步工具失败 | 把错误信息回填给规划 LLM，让它换工具或放弃，**不直接抛 500** |
+| 某 Agent 连续 N=3 次失败 | 熔断打开：调用被**毫秒级拒绝**（`errorCode=CIRCUIT_OPEN`），`/api/servers` 标 `healthy=false`；冷却 30s 后由下一个请求半开探测 |
+| 单步工具失败 | 把错误信息回填给规划 LLM，让它换工具或放弃，**不直接抛 500**；trace 记 `errorCode=TOOL_ERROR` |
 | 模型反复调同一工具 | 步数上限兜底，并记录 trace 标记 `status=MAX_STEPS` |
+
+> 实现备注（2026-11-02，M5）：**不摘除工具**（与 4.3 的"健康度过滤"不同）——因为半开探测是惰性的（冷却到期由下一个真实请求触发），一旦把工具摘掉，就再也收不到请求、永远无法恢复。因此改为"目录照常列出 + 调用时快速拒绝"。代价是模型可能撞一次墙再换工具。
+>
+> 已知限制：Python 服务**重启后**，Java 侧持有的 MCP 会话失效（`MCP session with server terminated`），半开探测必然失败，状态停在 `OPEN`，需要重启编排层才能恢复。重连（重建 `McpSyncClient`）留到 R1。
 
 ## 五、接口约定（HTTP）
 
@@ -234,16 +243,19 @@ McpToolNamePrefixGenerator prefixGenerator() {
 1. **一个工具一件事**，名字是动词短语；
 2. **description 必须写"不做什么"**——这比写"做什么"更能防错选；
 3. 参数尽量带默认值（`max_words=100`），减少缺参失败；
-4. 保留 `run_task` 作为 fallback，但 description 明确标"通用兜底"。
+4. 保留 `run_task` 作为 fallback，但 description 明确标"通用兜底"；
+5. **规划器优先**：能由规划器自己完成的写作、解释、建议类任务，不委派给执行器（2026-10-28 M4 实测，见 4.4 实现备注）。
+
+实现状态（2026-10-28，M4 完成）：`summarize` / `translate` / `run_task` / `ping` 均已落地；`title` 与描述用显式参数传入（不用 docstring），避免 `__doc__` 缩进污染发给模型的文本。5 条样本（时间 / 两步算术 / 摘要 / 翻译 / 写作）工具选择全部命中，详见 `development-protocol.md` M4 验收记录。
 
 ### 6.2 模型分工
 
 | 角色 | 模型 | 理由 |
 |---|---|---|
 | 规划器（Host） | `qwen2.5:7b` | 任务分解与工具选择是"难"能力，3b 易跑偏 |
-| 执行器（Agent） | `qwen2.5:3b` | 具体子任务执行是"易"能力，3b 够快 |
+| 执行器（Agent） | `qwen2.5:7b`（2026-10-28 起；可用 `LLM_MODEL` 切回 3b） | 3b 在摘要长度约束与"输出语言锁定"上不稳定（短文本会整段翻译成英文） |
 
-两者均通过配置项切换，不写死（便于实验对比"全 3b / 全 7b / 双层"）。
+两者均通过配置项切换，不写死（便于实验对比"全 3b / 全 7b / 双层"）。注意：改成双 7b 后，`B-dual` 对照组需要把 `LLM_MODEL=qwen2.5:3b` 显式设回去，M6 实验前统一定标。
 
 ## 七、里程碑（每个里程碑可独立验证）
 
@@ -251,9 +263,9 @@ McpToolNamePrefixGenerator prefixGenerator() {
 |---|---|---|---|
 | M1 | 依赖与装配：加 `spring-ai-starter-model-ollama`、`toolcallback.enabled=true`、前缀 bean | `/api/catalog` 返回 `demotools_add` 等前缀化工具；日志显示模型可用 | ✅ 完成（2026-10-22） |
 | M2 | 单步闭环：`/api/task` 能完成"现在几点"这类单工具任务 | 返回正确时间，trace 只有 1 步 | ✅ 完成（2026-10-22） |
-| M3 | 多步编排 + trace：完成"先算…再…"两步任务 | trace 中 ≥2 步且顺序合理 | ✅ 完成（2026-10-25，含 JSONL 落盘 + 空答案降级 + 超时配置化） |
-| M4 | 能力工具集：Agent 加 `summarize`，模型能选中它而非 `run_task` | "把这段话压缩成要点"命中 `agentworker_summarize` | ⬜ 未开始 |
-| M5 | 降级与熔断：停掉一个 Server，任务不 500、能降级 | 停 8001 后"现在几点"走降级或明确报错，trace `status=DEGRADED` | ⬜ 未开始 |
+| M3 | 多步编排 + trace：完成"先算…再…"两步任务 | trace 中 ≥2 步且顺序合理 | ✅ 完成（2026-10-25，含 JSONL 落盘 + 空答案降级 + 超时配置化；2026-10-28 回归 3/3 通过） |
+| M4 | 能力工具集：Agent 加 `summarize`/`translate`，模型能选中专用工具而非 `run_task` | "把这段话压缩成要点"命中 `agentworker_summarize` | ✅ 完成（2026-10-28：5/5 命中、`mvn test` 4/4；含"写作类任务由规划器直答"修正） |
+| M5 | 降级与熔断：停掉一个 Server，任务不 500、能降级 | 停 8001 后"现在几点"走降级或明确报错，trace `status=DEGRADED` | ✅ 完成（2026-11-02：`DEGRADED`+`TOOL_ERROR`；3 次后 `state=OPEN`；再调 `CIRCUIT_OPEN` 且 `latencyMs=0`；`mvn test` 24/24） |
 | M6 | 实验脚本：批量跑任务集，输出 CSV/JSON 指标 | 一键跑出成功率/延迟表 | ⬜ 未开始 |
 
 ## 八、实验设计（论文用）
@@ -266,7 +278,7 @@ McpToolNamePrefixGenerator prefixGenerator() {
 | B-rule | 规则编排 | 关键词 → 工具映射，无 LLM 规划 |
 | B-llm-3b | LLM 规划（3b） | 单层，规划执行同模型 |
 | B-llm-7b | LLM 规划（7b） | 单层，规划执行同模型 |
-| B-dual | 双层（7b 规划 + 3b 执行） | 本设计默认形态 |
+| B-dual | 双层（7b 规划 + 3b 执行） | 设计默认形态；2026-10-28 起执行器默认 7b，跑该组需显式 `LLM_MODEL=qwen2.5:3b` |
 
 **任务集**：30 条，按难度分层——单步 / 两步 / 三步 / 越界（应拒绝）/ 缺参（应追问）。
 **指标**：任务成功率（人工判定，双人标注不一致时第三人裁）、端到端 P50/P95 延迟、平均步数与工具调用次数、工具选择准确率（人工标注金标准）、失败模式分布（错选/漏调/多调/超时）。
@@ -292,11 +304,20 @@ McpToolNamePrefixGenerator prefixGenerator() {
 | 新增 `orchestrator/TaskOrchestrator.java` | 状态机、并发、超时、降级 |
 | 新增 `orchestrator/TraceRecorder.java` | JSONL trace 落盘 |
 | 新增 `web/OrchestratorController.java` | `/api/catalog`、`/api/task` |
-| `demo/py-agent/agent.py` | 加 `summarize` 工具；`run_task` description 改为"通用兜底" |
-| `demo/py-mcp-server/server.py`、`demo/py-agent/agent.py`、`McpDemoApplication.java` | 修正"stdio 传输"的过期注释 |
+| `demo/py-agent/agent.py` | 加 `summarize` / `translate` 能力工具（含 `title` 与"不做什么"描述）；`run_task` description 改为"通用兜底 + 写作类直答"；执行器默认模型 7b（✅ 2026-10-28） |
+| `demo/py-mcp-server/server.py`、`demo/py-agent/agent.py`、`McpDemoApplication.java` | 修正"stdio 传输"的过期注释（✅ 2026-10-28） |
+
+> 实现备注（2026-10-28）：实际 Java 包名为 `agent/`（不是上表的 `orchestrator/`）；工具目录暂由 `CatalogController` 即时构建，`ToolCatalogService` 尚未单独抽出，缓存/`list_changed` 失效留到 R1 一起做。
+>
+> 实现差异（2026-10-28）：任务总超时默认 300s（`mcp.planner.task-timeout-seconds`，设计稿 4.5 为 120s）；`maxSteps` 默认 10（设计稿为 5）；多个 `tool_calls` 目前经 `ToolCallingManager` 串行执行，未使用 `McpAsyncClient` 并行；单次 LLM 60s 超时已落地。以上参数在 M6 评测前统一定标。
+>
+> 实现备注（2026-10-28，M4）：执行器默认模型改为 `qwen2.5:7b`；`max_words` 只是提示性约束——实测 3b 给 30 字上限时输出 121 字、7b 输出 77 字，未做截断/重试（按"基础版本不加规则兜底"约定）；`run_task` 在 5 条验收样本中已不再被选中，是否从目录摘除见第十一节待决问题 4。
 
 ## 十一、待决问题
 
 1. 工具表分组（先选域再选工具）是否在第一版做？——建议暂缓，先观察 7b 模型在 5 个工具内的选择准确率。
 2. Agent 崩溃后熔断的半开探测周期（30s？60s？）——等 M5 实测再定。
 3. 是否把 `/api/task` 改成 SSE 流式返回进度——等 trace 数据说明单任务耗时分布后再定。
+4. `run_task` 是否从工具目录摘除、只留作降级兜底？——M4 的 5 条样本里它已不再被选中；摘除能进一步降低误选，但"多智能体协作"叙事少一个通用执行器入口，建议作为 M6 的一个对照组（有/无 fallback 工具）再定。
+5. MCP 会话重连（`session terminated` 后自动重建 `McpSyncClient`）——M5 已确认这是"服务重启后熔断无法自动恢复"的根因，留到 R1 与注册中心一起做。
+4. `run_task` 是否从工具目录摘除、只留作降级兜底？——M4 的 5 条样本里它已不再被选中；摘除能进一步降低误选，但"多智能体协作"叙事少一个通用执行器入口，建议作为 M6 的一个对照组（有/无 fallback 工具）再定。

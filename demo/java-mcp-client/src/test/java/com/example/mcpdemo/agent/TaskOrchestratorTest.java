@@ -2,6 +2,7 @@ package com.example.mcpdemo.agent;
 
 import com.example.mcpdemo.agent.model.TaskStatus;
 import com.example.mcpdemo.agent.model.TaskTrace;
+import com.example.mcpdemo.agent.model.TraceStep;
 import jakarta.annotation.Resource;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -47,5 +48,15 @@ class TaskOrchestratorTest {
         assertEquals(TaskStatus.OK, trace.status());
         assertTrue(trace.usedSteps() >= 2, "两步任务应至少调用两次工具");
         assertNotNull(trace.finalAnswer());
+    }
+
+    @Test
+    void run3() {
+        TaskContext tc = new TaskContext("003", "我现在要去面试 agent 开发实习岗位, 你先给我写一个符合应届生的自我介绍", 10);
+        TaskTrace trace = orchestrator.run(tc);
+        System.out.println(trace);
+
+        assertNotNull(trace);
+        assertTrue(trace.usedSteps() < 2, "单步任务应至多调用一次工具");
     }
 }

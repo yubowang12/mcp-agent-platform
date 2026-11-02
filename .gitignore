@@ -22,6 +22,7 @@ __pycache__/
 .tmp/
 tmpxtsovi19/
 demo/logs/
+.acl-reports/
 *.log
 
 # ---- IDE ----
@@ -33,3 +34,5 @@ demo/logs/
 Thumbs.db
 .DS_Store
 desktop.ini
+
+

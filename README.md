@@ -11,33 +11,34 @@
 | 阶段 0 | 技术验证（MCP 协议打通） | ✅ 已完成（2026-10-19） |
 | M1 | 依赖与装配：Ollama starter、toolcallback、工具名前缀 bean | ✅ 已完成（2026-10-22） |
 | M2 | `/api/task` 单步闭环（手动 ReAct 循环 + 超时 + terminate 工具） | ✅ 已完成（2026-10-22，测试跑通） |
-| M3 | 多步编排 + trace 落盘（JSONL） | ✅ 已完成（2026-10-25） |
-| M4 | Agent 能力工具集（summarize / translate） | ⬜ 未开始 |
-| M5 | 熔断 / 降级 / 故障注入 | ⬜ 未开始 |
+| M3 | 多步编排 + trace 落盘（JSONL） | ✅ 已完成（2026-10-25，2026-10-28 回归通过） |
+| M4 | Agent 能力工具集（summarize / translate）+ 工具选择验证 | ✅ 已完成（2026-10-28，5/5 命中，`mvn test` 4/4） |
+| M5 | 熔断 / 降级 / 故障注入 | ✅ 已完成（2026-11-02，熔断三态 + 快速失败 + DEGRADED，`mvn test` 24/24） |
 | M6 | 30 条任务集批量评测 | ⬜ 未开始 |
 
 ## 目录结构
 
 ```
 my_work/
-├── demo/                              # 技术验证与 M1~M3 实现
+├── demo/                              # 技术验证与 M1~M4 实现
 │   ├── py-mcp-server/                 # 工具微服务（MCP Server，8001）
 │   │   ├── server.py                  #   get_time / add / subtract
 │   │   └── test_client.py             #   Python 侧自测
 │   ├── py-agent/                      # Agent 微服务（MCP Server，8002）
-│   │   ├── agent.py                   #   run_task / ping（调用 Ollama）
+│   │   ├── agent.py                   #   summarize / translate / run_task / ping（调用 Ollama）
 │   │   └── test_agent_client.py       #   Agent 自测
 │   ├── java-mcp-client/               # Java 编排层（Spring AI MCP Client，8090）
-│   │   └── src/main/java/com/example/mcpdemo/
-│   │       ├── agent/                 # 编排器（M2/M3）
-│   │       │   ├── TaskOrchestrator.java      # 无状态 ReAct 循环
-│   │       │   ├── TaskContext.java           # 每请求上下文（状态隔离）
-│   │       │   ├── TimeoutToolCallback.java   # 45s 工具超时 + 耗时采样
-│   │       │   ├── TerminateTool.java         # 终止工具
-│   │       │   ├── model/                     # AgentState/TaskStatus/TaskTrace/TraceStep
-│   │       │   └── trace/TraceRecorder.java   # trace JSONL 落盘
-│   │       ├── config/McpToolPrefixConfig.java # 工具名前缀 bean
-│   │       └── web/                   # Catalog/Planner/Task 接口
+│   │   ├── src/main/java/com/example/mcpdemo/
+│   │   │   ├── agent/                 # 编排器（M2~M4）
+│   │   │   │   ├── TaskOrchestrator.java      # 无状态 ReAct 循环
+│   │   │   │   ├── TaskContext.java           # 每请求上下文（状态隔离）
+│   │   │   │   ├── TimeoutToolCallback.java   # 工具超时 + 耗时采样
+│   │   │   │   ├── TerminateTool.java         # 终止工具
+│   │   │   │   ├── model/                     # AgentState/TaskStatus/TaskTrace/TraceStep
+│   │   │   │   └── trace/TraceRecorder.java   # trace JSONL 落盘
+│   │   │   ├── config/                # McpToolPrefixConfig / PlannerProperties
+│   │   │   └── web/                   # Catalog/Planner/Task 接口
+│   │   └── src/test/java/com/example/mcpdemo/agent/  # 集成测试 + NoToolsAvailableTest
 │   └── .venv/                         # Python 虚拟环境（mcp 2.3.0 + openai）
 ├── docs/
 │   ├── architecture.md                # 编排层架构基线（规划型 Host，M1~M6）
@@ -82,6 +83,19 @@ Invoke-RestMethod -Uri 'http://localhost:8090/api/task' -Method Post -Body $byte
 
 trace 落盘位置：`demo/logs/trace/yyyy-MM-dd.jsonl`（JSONL，一行一条）。
 
+## 测试
+
+```powershell
+# 纯单元测试（不依赖 8001/8002/Ollama）
+mvn -s maven-settings.xml -f demo/java-mcp-client/pom.xml -Dtest=NoToolsAvailableTest test
+
+# 全量（3 个集成用例需要先启动 8001/8002 与 Ollama）
+mvn -s maven-settings.xml -f demo/java-mcp-client/pom.xml test
+```
+
+2026-11-02 实测：全量 **24/24** 通过（21 个纯单测 + 3 个集成用例），trace 见 `demo/logs/trace/`。其中：
+`CircuitBreakerTest`（8）验状态机；`CircuitBreakingToolCallbackTest`（5）验熔断包装器；`TimeoutToolCallbackTest`（3）验失败判定；`TaskDegradationTest`（4）验 `DEGRADED` 规则；`NoToolsAvailableTest`（1）无工具场景；`TaskOrchestratorTest`（3）集成回归。
+
 ## 文档索引
 
 | 文档 | 内容 |
@@ -94,7 +108,7 @@ trace 落盘位置：`demo/logs/trace/yyyy-MM-dd.jsonl`（JSONL，一行一条�
 
 ## 后续路线
 
-- **M4**：Agent 能力工具集（`summarize` / `translate`，description 写明"不做什么"）
-- **M5**：熔断/降级 + 故障注入实验
+- ~~**M4**：Agent 能力工具集（`summarize` / `translate`，description 写明"不做什么"）~~ ✅ 2026-10-28 完成
+- ~~**M5**：熔断/降级 + 故障注入实验~~ ✅ 2026-11-02 完成（恢复需重启编排层，重连留 R1）
 - **M6**：30 条任务集批量评测脚本（成功率/延迟/工具选择准确率）
 - **R1/R2/R3**：注册中心、前端控制台、安全沙箱（扩展项）

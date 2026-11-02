@@ -41,6 +41,8 @@ public class TaskContext {
     private boolean answerRetried;
     private String errorCode;
     private String errorMessage;
+    /** 降级（失败）步骤号；空表示没有降级步骤。 */
+    private List<Integer> degradedSteps = new ArrayList<>();
 
     public TaskContext(String taskId, String task, int maxSteps) {
         this.taskId = taskId;

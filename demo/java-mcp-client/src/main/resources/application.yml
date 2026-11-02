@@ -8,6 +8,10 @@ mcp:
     task-timeout-seconds: 300
     llm-timeout-seconds: 60
     tool-timeout-seconds: 45
+  circuit:             # M5：熔断（连续失败 N 次打开，冷却后只放 1 个探测请求）
+    failure-threshold: 3
+    open-seconds: 30
+    half-open-permits: 1
   trace:
     dir: E:/dsh_working/my_work/demo/logs/trace
 

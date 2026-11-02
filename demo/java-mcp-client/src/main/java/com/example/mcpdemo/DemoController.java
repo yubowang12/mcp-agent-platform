@@ -4,6 +4,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.example.mcpdemo.resilience.CircuitBreaker;
+import com.example.mcpdemo.resilience.CircuitBreakerRegistry;
+import com.example.mcpdemo.resilience.CircuitState;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
  * MCP 技术验证接口。
  *
  * 演示 Java 编排层通过 MCP 协议调用 Python 微服务：
- *   GET  /api/servers         查看已连接的 MCP Server
+ *   GET  /api/servers         查看已连接的 MCP Server（含熔断健康状态）
  *   GET  /api/tools           查看所有已注册工具
  *   GET  /api/demo/get-time   调用工具微服务 get_time
  *   GET  /api/demo/add        调用工具微服务 add
@@ -28,20 +31,27 @@ import org.springframework.web.bind.annotation.RestController;
 public class DemoController {
 
     private final List<McpSyncClient> clients;
+    private final CircuitBreakerRegistry circuitBreakers;
 
-    public DemoController(List<McpSyncClient> clients) {
+    public DemoController(List<McpSyncClient> clients, CircuitBreakerRegistry circuitBreakers) {
         this.clients = clients;
+        this.circuitBreakers = circuitBreakers;
     }
 
-    /** 列出所有已连接的 MCP Server。 */
+    /** 列出所有已连接的 MCP Server（含熔断状态，M5）。 */
     @GetMapping("/servers")
-    public List<Map<String, String>> servers() {
+    public List<Map<String, Object>> servers() {
         return clients.stream()
                 .map(c -> {
                     McpSchema.Implementation info = c.getServerInfo();
-                    Map<String, String> m = new LinkedHashMap<>();
-                    m.put("server", info != null ? info.name() : "unknown");
+                    String server = info != null ? info.name() : "unknown";
+                    CircuitBreaker breaker = circuitBreakers.get(server);
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("server", server);
                     m.put("version", info != null ? info.version() : "unknown");
+                    m.put("healthy", breaker.state() == CircuitState.CLOSED);
+                    m.put("state", breaker.state().name());
+                    m.put("consecutiveFailures", breaker.consecutiveFailures());
                     return m;
                 })
                 .toList();
