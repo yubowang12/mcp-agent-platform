@@ -25,6 +25,18 @@ demo/logs/
 .acl-reports/
 *.log
 
+# ---- 本机密钥（不要入库）----
+.env
+.env.local
+demo/.env.local
+application-local.yml
+**/application-local.yml
+
+# ---- M6 评测产物：raw.jsonl / trace 不入库，只留 summary.csv 与 report.md ----
+demo/eval/results/*/raw.jsonl
+demo/eval/results/*/trace/
+demo/eval/results/_trace/
+
 # ---- IDE ----
 .idea/
 *.iml

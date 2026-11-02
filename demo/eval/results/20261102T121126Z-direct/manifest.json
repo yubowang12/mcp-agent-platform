@@ -1,0 +1,13 @@
+{
+  "runId": "20261102T121126Z-direct",
+  "group": "direct",
+  "endpoint": "/api/agent/run",
+  "base": "http://localhost:8090",
+  "tasksVersion": "m6-1",
+  "tasksFile": "E:\\dsh_working\\my_work\\demo\\eval\\tasks.json",
+  "taskCount": 30,
+  "startedAt": "2026-11-02T12:11:26.078497+00:00",
+  "model": "qwen2.5:7b",
+  "python": "3.14.6",
+  "finishedAt": "2026-11-02T12:12:17.866545+00:00"
+}

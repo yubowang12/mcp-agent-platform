@@ -22,7 +22,7 @@ import org.springframework.ai.mcp.McpToolNamePrefixGenerator;
 import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.model.tool.ToolExecutionResult;
-import org.springframework.ai.ollama.api.OllamaChatOptions;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import org.springframework.stereotype.Component;
@@ -134,7 +134,8 @@ public class TaskOrchestrator {
         ctx.getMessages().add(new UserMessage(ctx.getTask()));
 
         // 工具回调同时挂在 ChatOptions 上：模型调用用它，executeToolCalls 也用它按名字解析。
-        OllamaChatOptions options = OllamaChatOptions.builder()
+        // DashScope / DeepSeek 都是 OpenAI 兼容接口，按 OpenAI 的 options 走。
+        OpenAiChatOptions options = OpenAiChatOptions.builder()
                 .model(props.model())
                 .toolCallbacks(List.of(tools))
                 .internalToolExecutionEnabled(false)

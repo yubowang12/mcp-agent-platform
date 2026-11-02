@@ -56,8 +56,9 @@
                          └───────────────────────────────┼──────────┘
                                                          │ OpenAI 兼容
                                                          ▼
-                                              Ollama qwen2.5:3b（执行）
-                                              Ollama qwen2.5:7b（规划）
+                                           DashScope qwen-plus（规划 + 执行）
+                                           早期版本为本地 Ollama qwen2.5:3b/7b，
+                                           2026-11-02 起换成云端（见第十节实现备注）
 ```
 
 ## 四、编排层内部设计
@@ -266,7 +267,7 @@ McpToolNamePrefixGenerator prefixGenerator() {
 | M3 | 多步编排 + trace：完成"先算…再…"两步任务 | trace 中 ≥2 步且顺序合理 | ✅ 完成（2026-10-25，含 JSONL 落盘 + 空答案降级 + 超时配置化；2026-10-28 回归 3/3 通过） |
 | M4 | 能力工具集：Agent 加 `summarize`/`translate`，模型能选中专用工具而非 `run_task` | "把这段话压缩成要点"命中 `agentworker_summarize` | ✅ 完成（2026-10-28：5/5 命中、`mvn test` 4/4；含"写作类任务由规划器直答"修正） |
 | M5 | 降级与熔断：停掉一个 Server，任务不 500、能降级 | 停 8001 后"现在几点"走降级或明确报错，trace `status=DEGRADED` | ✅ 完成（2026-11-02：`DEGRADED`+`TOOL_ERROR`；3 次后 `state=OPEN`；再调 `CIRCUIT_OPEN` 且 `latencyMs=0`；`mvn test` 24/24） |
-| M6 | 实验脚本：批量跑任务集，输出 CSV/JSON 指标 | 一键跑出成功率/延迟表 | ⬜ 未开始 |
+| M6 | 实验脚本：批量跑任务集，输出 CSV/JSON 指标 | 一键跑出成功率/延迟表 | ✅ 完成（2026-11-02：30 条任务集，严格成功 25/30、宽松 27/30；P50 2.7s / P95 7.3s；直通组对照；见 `demo/eval/RESULTS.md`） |
 
 ## 八、实验设计（论文用）
 
@@ -284,6 +285,8 @@ McpToolNamePrefixGenerator prefixGenerator() {
 **指标**：任务成功率（人工判定，双人标注不一致时第三人裁）、端到端 P50/P95 延迟、平均步数与工具调用次数、工具选择准确率（人工标注金标准）、失败模式分布（错选/漏调/多调/超时）。
 
 **可复现**：锁定 `temperature=0.3`、记录 trace JSONL、任务集与标注表随代码入库。
+
+> 实测进展（2026-11-02，M6）：已落地任务集 `demo/eval/tasks.json`（30 条，5 类各 6 条）、评测脚本 `demo/eval/run_eval.py`（标准库实现，产物 raw.jsonl / summary.csv / report.md，`--rescore` 可只重算指标）。已跑 **B-dual** 与 **A 直通** 两组：严格成功 25/30（83.3%）、宽松 27/30（90.0%）、P50 2.7s / P95 7.3s；直通组 P50 1.2s 但无工具能力、工具类任务只能生成文本。`B-rule`、`B-llm-3b`、双人标注一致性尚未跑。详见 `demo/eval/RESULTS.md`。
 
 ## 九、明确不做（列为扩展）
 
@@ -310,6 +313,8 @@ McpToolNamePrefixGenerator prefixGenerator() {
 > 实现备注（2026-10-28）：实际 Java 包名为 `agent/`（不是上表的 `orchestrator/`）；工具目录暂由 `CatalogController` 即时构建，`ToolCatalogService` 尚未单独抽出，缓存/`list_changed` 失效留到 R1 一起做。
 >
 > 实现差异（2026-10-28）：任务总超时默认 300s（`mcp.planner.task-timeout-seconds`，设计稿 4.5 为 120s）；`maxSteps` 默认 10（设计稿为 5）；多个 `tool_calls` 目前经 `ToolCallingManager` 串行执行，未使用 `McpAsyncClient` 并行；单次 LLM 60s 超时已落地。以上参数在 M6 评测前统一定标。
+>
+> 实现备注（2026-11-02，M6 后）：模型层由本地 Ollama 换成 **DashScope `qwen-plus`**。改动：`spring-ai-starter-model-ollama` → `spring-ai-starter-model-openai`；`OllamaChatOptions` → `OpenAiChatOptions`；`spring.ai.ollama.*` → `spring.ai.openai.*`。**base-url 有坑**：Java 的 Spring AI 会自己拼 `/v1/chat/completions`，所以配 `https://dashscope.aliyuncs.com/compatible-mode`（不带 `/v1`，否则 404）；Python 的 openai SDK 相反，`LLM_BASE_URL` 要带 `/v1`。API Key 走 `${DASHSCOPE_API_KEY:}` 占位符 + `application-local.yml`（gitignored，local profile）；集成测试用 `@ActiveProfiles("local")` 读同一份文件。
 >
 > 实现备注（2026-10-28，M4）：执行器默认模型改为 `qwen2.5:7b`；`max_words` 只是提示性约束——实测 3b 给 30 字上限时输出 121 字、7b 输出 77 字，未做截断/重试（按"基础版本不加规则兜底"约定）；`run_task` 在 5 条验收样本中已不再被选中，是否从目录摘除见第十一节待决问题 4。
 

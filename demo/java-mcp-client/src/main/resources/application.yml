@@ -1,10 +1,10 @@
 server:
   port: 8090
 
-# M3：编排层配置（可被命令行覆盖，如 --mcp.planner.model=qwen2.5:3b）
+# M3：编排层配置（可被命令行覆盖，如 --mcp.planner.model=qwen-plus）
 mcp:
   planner:
-    model: qwen2.5:7b
+    model: qwen-plus
     task-timeout-seconds: 300
     llm-timeout-seconds: 60
     tool-timeout-seconds: 45
@@ -17,11 +17,14 @@ mcp:
 
 spring:
   ai:
-    ollama:              # 规划型 Host 的本地模型（Ollama，OpenAI 兼容接口）
-      base-url: http://127.0.0.1:11434
+    openai:              # 规划型 Host：DashScope（阿里百炼）OpenAI 兼容接口
+      # 注意：Spring AI 会自己拼 /v1/chat/completions，所以这里**不能**带 /v1
+      #（Python 的 openai SDK 相反，base_url 要带 /v1）
+      base-url: https://dashscope.aliyuncs.com/compatible-mode
+      api-key: ${DASHSCOPE_API_KEY:}   # 从环境变量读取，不写进仓库
       chat:
         options:
-          model: qwen2.5:7b
+          model: qwen-plus
           temperature: 0.3
     mcp:
       client:            # 客户端配置：本 Java 应用作为 MCP Client，连接 Python 微服务

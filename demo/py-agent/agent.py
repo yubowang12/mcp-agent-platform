@@ -3,7 +3,7 @@
 架构说明：
     - 每个 Agent 是集群中的一个微服务，通过 MCP 协议暴露**能力工具集**。
     - Java 编排层作为 MCP Client 连接本 Agent，规划模型按工具 description 选择能力。
-    - Agent 内部调用本地 Ollama 大模型完成推理（可替换为任意 LLM API）。
+    - Agent 内部调用云端大模型（默认 DashScope 的 OpenAI 兼容接口）完成推理。
 
 能力工具集（M4）：
     summarize  把长文本压缩为要点（不做翻译 / 不做查询）
@@ -15,22 +15,56 @@
     python agent.py
 
 环境变量：
-    LLM_BASE_URL   OpenAI 兼容接口地址，默认 http://127.0.0.1:11434/v1（Ollama）
-    LLM_API_KEY    API Key，Ollama 可随便填
-    LLM_MODEL      模型名，默认 qwen2.5:7b（设成 qwen2.5:3b 可做双层"7b 规划 + 3b 执行"对照）
+    LLM_BASE_URL   OpenAI 兼容接口地址，默认 https://dashscope.aliyuncs.com/compatible-mode/v1
+    LLM_API_KEY    API Key；未设置时回退读 DASHSCOPE_API_KEY，再回退读 Java 侧的
+                   application-local.yml（一份 Key 同时给 Java 和 Python 用）
+    LLM_MODEL      模型名，默认 qwen-plus；可换 qwen-turbo / qwen-max / deepseek-chat
 """
 
 import os
+import re
+from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
 from openai import OpenAI
 
-LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "http://127.0.0.1:11434/v1")
-LLM_API_KEY = os.environ.get("LLM_API_KEY", "ollama")
-LLM_MODEL = os.environ.get("LLM_MODEL", "qwen2.5:7b")
+LLM_BASE_URL = os.environ.get(
+    "LLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+LLM_MODEL = os.environ.get("LLM_MODEL", "qwen-plus")
+
+# Java 侧的 local profile：Key 只写这一份，Python 直接读同一个文件
+LOCAL_YML = (Path(__file__).resolve().parents[1]
+             / "java-mcp-client" / "src" / "main" / "resources" / "application-local.yml")
+
+
+def resolve_api_key() -> str:
+    """按优先级取 Key：环境变量 → application-local.yml。"""
+    from_env = os.environ.get("LLM_API_KEY") or os.environ.get("DASHSCOPE_API_KEY")
+    if from_env:
+        return from_env
+    if LOCAL_YML.exists():
+        # 只认 spring.ai.openai.api-key 这一种写法，避免引入 YAML 依赖
+        for line in LOCAL_YML.read_text(encoding="utf-8").splitlines():
+            match = re.match(r"^\s*api-key:\s*(\S+)", line)
+            if match:
+                value = match.group(1).strip().strip('"').strip("'")
+                if value and not value.startswith("${"):
+                    return value
+    return ""
+
+
+LLM_API_KEY = resolve_api_key()
 
 # 执行器温度固定 0.3（与实验基线一致，见 docs/architecture.md 第八节"可复现"）
 TEMPERATURE = 0.3
+
+if not LLM_API_KEY:
+    raise SystemExit(
+        "未配置 API Key。三种方式任选其一：\n"
+        "  1) 在 %s 里写 spring.ai.openai.api-key（推荐，Java 也读它）\n"
+        "  2) $env:DASHSCOPE_API_KEY = \"sk-...\"\n"
+        "  3) 启动时设置 LLM_API_KEY" % LOCAL_YML
+    )
 
 client = OpenAI(base_url=LLM_BASE_URL, api_key=LLM_API_KEY)
 

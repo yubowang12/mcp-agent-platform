@@ -1,0 +1,31 @@
+﻿id,category,status,strict,lenient,answered,steps,tools,expected,controlActions,latencyMs,errorCode,modes,answerPreview
+s1,single,OK,,,True,0,,demotools_get_time,,1551,,,当前时间是XX:XX，由于我无法实时获取时间，请您查看设备顶部的时间显示或询问系统时间以获取准确信息。
+s2,single,OK,,,True,0,,demotools_add,,754,,,12.5 加 7.5 等于 20。
+s3,single,OK,,,True,0,,demotools_subtract,,736,,,100 减 37 等于 63。
+s4,single,OK,,,True,0,,agentworker_summarize,,828,,,MCP协议标准化AI与外部工具连接，Host协调，Client维护，Server暴露能力。
+s5,single,OK,,,True,0,,agentworker_translate,,710,,,"Today's weather is nice, let's go for a walk in the park."
+s6,single,OK,,,True,0,,,,730,,,我是一个来自Agent集群的执行型智能体，专注于高效完成用户任务。
+t1,two,OK,,,True,0,,demotools_subtract|demotools_add,,1122,,,先算 10 减 1 得到 9，再把结果加 2 得到 11。
+t2,two,OK,,,True,0,,demotools_get_time|agentworker_translate,,2163,,,"现在的时间是15:30（假设当前时间是15:30，具体时间请自行查看）。  将其翻译成英文为：15:30 in English is ""15:30"" or ""3"
+t3,two,OK,,,True,0,,agentworker_translate|agentworker_summarize,,598,,,A multi-agent platform standardizes tool calls via the MCP protocol.
+t4,two,OK,,,True,0,,demotools_add|demotools_subtract,,1173,,,先算 8 加 9 得到 17，再算 17 减 5 得到 12。
+t5,two,OK,,,True,0,,agentworker_translate|demotools_get_time,,1971,,,"""Agent 集群"" 翻译成英文为 ""Agent Cluster""。  现在的时间因地理位置而异，您能告诉我您所在的城市或时区吗？或者我可以帮您查询一个普遍接受"
+t6,two,OK,,,True,0,,agentworker_summarize|agentworker_translate,,2010,,,要点： - MCP 标准化工具调用 - Host 负责规划 - Agent 负责执行  English Translation: Key Points: - M
+h1,three,OK,,,True,0,,demotools_subtract|demotools_add|agentworker_translate,,1378,,,"10 减 1 等于 9，再加 2 等于 11。结果用英文表示是 ""eleven""。"
+h2,three,OK,,,True,0,,demotools_get_time|agentworker_summarize|agentworker_translate,,1320,,,现在时间是15:30。 要点：当前时间15:30。 In English: The current time is 15:30.
+h3,three,OK,,,True,0,,demotools_subtract|demotools_add|demotools_subtract,,1743,,,先算 100 减 58 得 42，再加 8 得 50，再减 10 得 40。所以最终结果是 40。
+h4,three,OK,,,True,0,,demotools_get_time|demotools_add|agentworker_translate,,2039,,,现在的时间是 [由助手查询后给出]，3 加 4 等于 7。  翻译成英文后： - 现在的时间是 [根据查询结果翻译]。 - 3 加 4 等于 7。
+h5,three,OK,,,True,0,,demotools_subtract|agentworker_translate|agentworker_summarize,,347,,,Fifteen minus five
+h6,three,OK,,,True,0,,agentworker_translate|agentworker_summarize|agentworker_translate,,682,,,多智能体协作 → Multi-Agent Collaboration → 多智能体协作
+o1,out_of_scope,OK,,,True,0,,,,1356,,,明天北京的天气预计多云，最高温度15℃，最低温度3℃，请注意适时增减衣物。建议您出行前关注最新的天气预报信息。
+o2,out_of_scope,OK,,,True,0,,,,3270,,,好的，为了帮助您订机票，我需要了解一些信息： 1. 您从哪个城市出发？ 2. 您计划的具体出发和返回日期是什么时候？ 3. 您对航空公司或航班时间有特定的要求吗
+o3,out_of_scope,OK,,,True,0,,,,4795,,,当然可以，但我需要您提供一些具体信息，比如您的邮箱地址、密码（或授权码），以及收件人的邮箱地址等。由于安全原因，我无法直接访问您的邮箱账户。您可以按照以下模板格
+o4,out_of_scope,OK,,,True,0,,,,4651,,,好的，我将帮助您打开浏览器并搜索MCP协议的最新版本。请确保您的设备已连接网络。现在我将模拟这个过程：  1. 打开浏览器（假设使用的是Google Chrom
+o5,out_of_scope,OK,,,True,0,,,,10341,,,要完成这个任务，通常需要使用编程语言和相应的库来实现。不过，作为一个文本交互的智能体，我无法直接执行下载操作。你可以使用Python等编程语言来实现这个功能。下
+o6,out_of_scope,OK,,,True,0,,,,1241,,,要完成这个任务，您需要将图片上传到我这里。请将包含文字的图片发送给我，然后我会帮助您提取图片中的文字。
+m1,missing_arg,OK,,,True,0,,,,584,,,当然可以，请提供你需要翻译的文本和目标语言吧。
+m2,missing_arg,OK,,,True,0,,,,1846,,,当然可以帮助您压缩文件。请您提供需要压缩的文件或文件夹路径，以及指定的压缩格式（如.zip、.rar等），还有您希望保存压缩文件的位置。这样我就可以更准确地帮助
+m3,missing_arg,OK,,,True,0,,,,391,,,当然可以，请告诉我你需要计算什么？
+m4,missing_arg,OK,,,True,0,,,,481,,,请提供您需要翻译的中文段落。
+m5,missing_arg,OK,,,True,0,,,,478,,,当然可以，请告诉我您需要查询什么信息？
+m6,missing_arg,OK,,,True,0,,,,482,,,明确任务需求，高效执行，简洁反馈。

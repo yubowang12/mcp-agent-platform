@@ -1,0 +1,47 @@
+{
+  "version": "m6-1",
+  "maxSteps": 10,
+  "categories": {
+    "single": "单步：一个工具或直接回答",
+    "two": "两步：固定顺序",
+    "three": "三步：固定顺序",
+    "out_of_scope": "越界：应明确说明做不到，不调工具",
+    "missing_arg": "缺参：应追问缺失信息，不瞎编参数"
+  },
+  "tasks": [
+    {"id": "s1", "category": "single", "task": "现在几点？", "expectedTools": ["demotools_get_time"], "expectedBehavior": "TOOLS"},
+    {"id": "s2", "category": "single", "task": "12.5 加 7.5 等于多少？", "expectedTools": ["demotools_add"], "expectedBehavior": "TOOLS"},
+    {"id": "s3", "category": "single", "task": "100 减 37 等于多少？", "expectedTools": ["demotools_subtract"], "expectedBehavior": "TOOLS"},
+    {"id": "s4", "category": "single", "task": "把这段话压缩成不超过 60 字的要点：MCP 是一个开放协议，用于标准化 AI 应用与外部工具之间的连接。它把能力抽象成工具、资源、提示三类，Host 负责协调，Client 维护连接，Server 暴露能力。", "expectedTools": ["agentworker_summarize"], "expectedBehavior": "TOOLS"},
+    {"id": "s5", "category": "single", "task": "把“今天天气不错，我们去公园散步吧”翻译成英文", "expectedTools": ["agentworker_translate"], "expectedBehavior": "TOOLS"},
+    {"id": "s6", "category": "single", "task": "用一句话介绍你自己", "expectedTools": [], "expectedBehavior": "ANSWER"},
+
+    {"id": "t1", "category": "two", "task": "先算 10 减 1，再把结果加 2", "expectedTools": ["demotools_subtract", "demotools_add"], "expectedBehavior": "TOOLS"},
+    {"id": "t2", "category": "two", "task": "先查一下现在几点，再把时间翻译成英文", "expectedTools": ["demotools_get_time", "agentworker_translate"], "expectedBehavior": "TOOLS"},
+    {"id": "t3", "category": "two", "task": "把“多智能体协作平台通过 MCP 协议把工具调用标准化”翻译成英文，再压缩成不超过 20 字的英文要点", "expectedTools": ["agentworker_translate", "agentworker_summarize"], "expectedBehavior": "TOOLS"},
+    {"id": "t4", "category": "two", "task": "先算 8 加 9，再算结果减 5", "expectedTools": ["demotools_add", "demotools_subtract"], "expectedBehavior": "TOOLS"},
+    {"id": "t5", "category": "two", "task": "把“Agent 集群”翻译成英文，然后查一下现在几点", "expectedTools": ["agentworker_translate", "demotools_get_time"], "expectedBehavior": "TOOLS"},
+    {"id": "t6", "category": "two", "task": "先把这段文本压缩成要点，再翻译成英文：MCP 让工具调用标准化，Host 负责规划，Agent 负责执行。", "expectedTools": ["agentworker_summarize", "agentworker_translate"], "expectedBehavior": "TOOLS"},
+
+    {"id": "h1", "category": "three", "task": "先算 10 减 1，再加 2，最后把结果翻译成英文", "expectedTools": ["demotools_subtract", "demotools_add", "agentworker_translate"], "expectedBehavior": "TOOLS"},
+    {"id": "h2", "category": "three", "task": "先查现在几点，再把时间压缩成不超过 20 字的要点，最后翻译成英文", "expectedTools": ["demotools_get_time", "agentworker_summarize", "agentworker_translate"], "expectedBehavior": "TOOLS"},
+    {"id": "h3", "category": "three", "task": "先算 100 减 58，再加 8，再减 10", "expectedTools": ["demotools_subtract", "demotools_add", "demotools_subtract"], "expectedBehavior": "TOOLS"},
+    {"id": "h4", "category": "three", "task": "先查现在几点，再算 3 加 4，最后把两个结果一起翻译成英文", "expectedTools": ["demotools_get_time", "demotools_add", "agentworker_translate"], "expectedBehavior": "TOOLS"},
+    {"id": "h5", "category": "three", "task": "先算 20 减 5，再把结果翻译成英文，最后压缩成不超过 10 个字", "expectedTools": ["demotools_subtract", "agentworker_translate", "agentworker_summarize"], "expectedBehavior": "TOOLS"},
+    {"id": "h6", "category": "three", "task": "把“多智能体协作”翻译成英文，压缩成不超过 10 个字，再翻译回中文", "expectedTools": ["agentworker_translate", "agentworker_summarize", "agentworker_translate"], "expectedBehavior": "TOOLS"},
+
+    {"id": "o1", "category": "out_of_scope", "task": "帮我查一下明天北京的天气", "expectedTools": [], "expectedBehavior": "REFUSE"},
+    {"id": "o2", "category": "out_of_scope", "task": "帮我订一张明天去上海的机票", "expectedTools": [], "expectedBehavior": "REFUSE"},
+    {"id": "o3", "category": "out_of_scope", "task": "帮我给张三发一封邮件，告诉他会议改到下午三点", "expectedTools": [], "expectedBehavior": "REFUSE"},
+    {"id": "o4", "category": "out_of_scope", "task": "帮我打开浏览器搜索 MCP 协议的最新版本", "expectedTools": [], "expectedBehavior": "REFUSE"},
+    {"id": "o5", "category": "out_of_scope", "task": "帮我下载 https://example.com 这个网页的内容", "expectedTools": [], "expectedBehavior": "REFUSE"},
+    {"id": "o6", "category": "out_of_scope", "task": "把这张图片里的文字提取出来", "expectedTools": [], "expectedBehavior": "REFUSE"},
+
+    {"id": "m1", "category": "missing_arg", "task": "帮我翻译一下", "expectedTools": [], "expectedBehavior": "CLARIFY"},
+    {"id": "m2", "category": "missing_arg", "task": "帮我压缩一下", "expectedTools": [], "expectedBehavior": "CLARIFY"},
+    {"id": "m3", "category": "missing_arg", "task": "帮我算一下", "expectedTools": [], "expectedBehavior": "CLARIFY"},
+    {"id": "m4", "category": "missing_arg", "task": "把这段话翻译成英文", "expectedTools": [], "expectedBehavior": "CLARIFY"},
+    {"id": "m5", "category": "missing_arg", "task": "帮我查一下", "expectedTools": [], "expectedBehavior": "CLARIFY"},
+    {"id": "m6", "category": "missing_arg", "task": "压缩成不超过 50 字的要点", "expectedTools": [], "expectedBehavior": "CLARIFY"}
+  ]
+}

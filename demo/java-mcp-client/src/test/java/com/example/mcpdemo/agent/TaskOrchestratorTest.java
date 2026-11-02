@@ -6,6 +6,7 @@ import com.example.mcpdemo.agent.model.TraceStep;
 import jakarta.annotation.Resource;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -15,10 +16,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * M2/M3 编排器冒烟测试（集成）。
  *
- * <p>注意：@SpringBootTest 会启动完整应用（含 MCP 客户端初始化），
- * 运行前请先启动 8001/8002 两个 Python 服务，否则上下文启动会 fail-fast。
+ * <p>前提（缺一会启动失败）：
+ * <ol>
+ *   <li>先起 8001/8002 两个 Python 服务，否则 MCP 客户端初始化 fail-fast；</li>
+ *   <li>激活 {@code local} profile（本类已加 {@link ActiveProfiles}），
+ *       由 {@code application-local.yml} 提供 {@code spring.ai.openai.api-key}；
+ *       该文件不入库，缺失时会报 "OpenAI API key must be set"。</li>
+ * </ol>
  */
 @SpringBootTest
+@ActiveProfiles("local")
 class TaskOrchestratorTest {
 
     /** 让 Spring 创建并注入编排器，构造器参数（含前缀生成器、配置）才会被正确注入。 */

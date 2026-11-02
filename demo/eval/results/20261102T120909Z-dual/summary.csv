@@ -1,0 +1,31 @@
+﻿id,category,status,strict,lenient,answered,steps,tools,expected,controlActions,latencyMs,errorCode,modes,answerPreview
+s1,single,OK,True,True,True,1,demotools_get_time,demotools_get_time,,1937,,,现在的时间是2026年11月2日20点09分10秒。
+s2,single,OK,True,True,True,1,demotools_add,demotools_add,,2154,,,12.5 加 7.5 等于 20.0。
+s3,single,OK,True,True,True,1,demotools_subtract,demotools_subtract,,1986,,,100 减 37 等于 63。
+s4,single,OK,True,True,True,1,agentworker_summarize,agentworker_summarize,,6692,,,MCP 是开放协议，标准化 AI 与外部工具连接，分为工具、资源、提示三类。Host 协调，Client 维护，Server 暴露能力。
+s5,single,OK,True,True,True,1,agentworker_translate,agentworker_translate,,2939,,,"The weather is nice today, let's go for a walk in the park."
+s6,single,OK,True,True,True,0,,,,567,,,我是一个能够帮助你完成各种任务的智能助手。
+t1,two,OK,True,True,True,2,demotools_subtract|demotools_add,demotools_subtract|demotools_add,,2659,,,计算结果是 11。
+t2,two,OK,True,True,True,2,demotools_get_time|agentworker_translate,demotools_get_time|agentworker_translate,,5329,,,当前时间是2026-11-02T20:09:29，用英文表示就是2026-11-02T20:09:29。
+t3,two,OK,False,True,True,3,agentworker_translate|agentworker_summarize|agentworker_summarize,agentworker_translate|agentworker_summarize,,7223,,sequence_mismatch,MCP协议标准化多智能体协作平台工具调用。
+t4,two,OK,True,True,True,2,demotools_add|demotools_subtract,demotools_add|demotools_subtract,,2636,,,计算结果是 12。
+t5,two,OK,True,True,True,2,agentworker_translate|demotools_get_time,agentworker_translate|demotools_get_time,,3918,,,"""Agent 集群"" 翻译成英文是 ""Agent Cluster""。当前时间是 2026-11-02T20:09:45。"
+t6,two,OK,True,True,True,2,agentworker_summarize|agentworker_translate,agentworker_summarize|agentworker_translate,,6587,,,"要点为：MCP标准化工具调用，Host规划，Agent执行。  翻译结果为：MCP standardizes the tool calls, while Hos"
+h1,three,OK,True,True,True,3,demotools_subtract|demotools_add|agentworker_translate,demotools_subtract|demotools_add|agentworker_translate,,4233,,,"The result of your calculation is nine, which is translated to ""nine"" in English"
+h2,three,OK,True,True,True,3,demotools_get_time|agentworker_summarize|agentworker_translate,demotools_get_time|agentworker_summarize|agentworker_translate,,7968,,,"当前时间要点：2026年11月2日20:09:59。 翻译成英文：November 2, 2026 20:09:59。"
+h3,three,OK,False,True,True,2,demotools_add|demotools_subtract,demotools_subtract|demotools_add|demotools_subtract,,2692,,sequence_mismatch,最终结果是 40。
+h4,three,OK,True,True,True,3,demotools_get_time|demotools_add|agentworker_translate,demotools_get_time|demotools_add|agentworker_translate,,5504,,,"当前时间是 20:10，3 加 4 的结果是 7.0。这两个结果翻译成英文分别是 ""20:10"" 和 ""7.0""。"
+h5,three,OK,True,True,True,3,demotools_subtract|agentworker_translate|agentworker_summarize,demotools_subtract|agentworker_translate|agentworker_summarize,,4142,,,十五
+h6,three,OK,True,True,True,3,agentworker_translate|agentworker_summarize|agentworker_translate,agentworker_translate|agentworker_summarize|agentworker_translate,,5128,,,最终答复: Collaborative multi-agent systems（多智能体协作）
+o1,out_of_scope,OK,False,False,True,1,agentworker_run_task,,,7276,,wrong_tool,明天北京的天气预计多云转晴，气温在-4°C到5°C之间，建议出门携带外套。请注意，这是基于当前可获取信息的预测，实际天气可能会有所变化，请出行前关注最新天气预报
+o2,out_of_scope,OK,True,True,True,0,,,,2193,,,当前时间是2023-04-05T14:30:00Z，明天的日期是2023-04-06。但我没有查询航班的工具，请问您具体从哪个城市出发呢？
+o3,out_of_scope,OK,True,True,True,1,,,terminate,1322,,,当前工具集无法直接发送邮件，请使用其他工具或手动操作。终止任务。  
+o4,out_of_scope,OK,True,True,True,1,,,terminate,2666,,,这个任务需要使用浏览器和网络搜索功能，但当前可用的工具无法直接实现这一需求。我建议您直接在浏览器中输入“MCP协议 最新版本”进行搜索。如果需要帮助理解或解释搜
+o5,out_of_scope,OK,True,True,True,0,,,,708,,,当前工具集无法直接下载网页内容，请使用其他工具或方法尝试。
+o6,out_of_scope,OK,True,True,True,0,,,,775,,,当前工具集不支持处理图片，请上传文字内容或提供图片中的文字描述。
+m1,missing_arg,OK,True,True,True,0,,,,524,,,请提供您需要翻译的文本以及目标语言。
+m2,missing_arg,OK,True,True,True,0,,,,356,,,请提供需要压缩的原文。
+m3,missing_arg,OK,True,True,True,0,,,,790,,,请提供你需要计算的具体数字和运算符号，例如：“15 + 27”。
+m4,missing_arg,OK,False,False,True,2,agentworker_translate|agentworker_summarize,,,4764,,wrong_tool,"Translate the following text into English: ""把这段话翻译成英文.""   The English translatio"
+m5,missing_arg,OK,True,True,True,0,,,,778,,,请具体说明您需要查询的内容，比如某个时间、地点或特定事件等。
+m6,missing_arg,OK,False,False,True,1,agentworker_summarize,,,2908,,wrong_tool,要点：保留关键点，不超过 50 字。
