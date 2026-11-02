@@ -1,15 +1,30 @@
-# 基于 MCP 协议的微服务化多智能体协作平台（毕业设计工作区）
+# 基于 MCP 协议的微服务化多智能体协作平台
+
+> **定位：求职作品集项目**（面向 Agent 开发 / 后端实习）。目标不是"写完作业"，而是能拿出手讲清楚：为什么这样设计、效果怎么量化、故障时怎么活下来。也可以作为毕业设计的备选方案。
 
 > 技术栈：**Java (Spring AI + Spring Boot) 编排层** + **Python (MCP SDK) Agent/工具微服务** + **Vue 控制台（规划中）** + **DashScope `qwen-plus`（OpenAI 兼容接口；2026-11-02 起替代本地 Ollama）**
 >
 > 架构基线：**规划型 Host（方案 B）**——Java 编排层自带规划 LLM，负责规划/调度/聚合；Python Agent 作为执行器。详见 `docs/architecture.md`。
+>
+> 简历速览 / 面试讲法 / 演示脚本：见 [`docs/portfolio.md`](docs/portfolio.md)。
+
+## 项目亮点（能拿出证据的部分）
+
+| 亮点 | 证据 |
+|---|---|
+| **跨语言 MCP 编排**：Java Host 通过 MCP 协议调度 Python Agent 与工具服务，工具名自动前缀化、双向映射 | `/api/catalog` 返回 7 个前缀化工具；`/api/task` 端到端可用 |
+| **能力工具集取代"万能入口"**：`summarize`/`translate`/`run_task`，描述写清"不做什么"；写作类任务由规划器直答，不委派 | 5 条工具选择样本 5/5 命中；自我介绍类任务从 3 次模型调用降到 1 次 |
+| **手写三态熔断 + 快速失败**：连续失败 3 次打开，冷却后半开探测；熔断期间调用 0ms 拒绝，不干等 45s 超时 | 停 8001 实测：`DEGRADED/TOOL_ERROR` → `OPEN` → `CIRCUIT_OPEN(0ms)` |
+| **结构化 trace 与降级口径**：每请求一条 JSONL，`status`/`errorCode`/`degradedSteps` 可归因 | `demo/logs/trace/*.jsonl`、`TaskTrace` |
+| **可复现评测**：30 条任务集 + 批跑脚本 + 严格/宽松成功率 + P50/P95 + 失败模式分布 | `demo/eval/RESULTS.md`（B-dual 严格 25/30）；`--rescore` 支持口径复算 |
+| **工程完整度**：24 个测试（21 单测 + 3 集成）、配置外置、密钥不入库、一条命令起全套服务 | `mvn test` 24/24；`demo/start-dev.ps1` |
 
 ## 当前进度
 
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
 | 阶段 0 | 技术验证（MCP 协议打通） | ✅ 已完成（2026-10-19） |
-| M1 | 依赖与装配：Ollama starter、toolcallback、工具名前缀 bean | ✅ 已完成（2026-10-22） |
+| M1 | 依赖与装配：模型 starter、toolcallback、工具名前缀 bean | ✅ 已完成（2026-10-22） |
 | M2 | `/api/task` 单步闭环（手动 ReAct 循环 + 超时 + terminate 工具） | ✅ 已完成（2026-10-22，测试跑通） |
 | M3 | 多步编排 + trace 落盘（JSONL） | ✅ 已完成（2026-10-25，2026-10-28 回归通过） |
 | M4 | Agent 能力工具集（summarize / translate）+ 工具选择验证 | ✅ 已完成（2026-10-28，5/5 命中，`mvn test` 4/4） |

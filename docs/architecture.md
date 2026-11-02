@@ -9,7 +9,7 @@
 
 阶段 0 验证的链路是 `Java HTTP → MCP → Python Agent → Ollama`，但 Java 层**没有任何决策**：`task` 原样转发给 `agent-worker`，Agent 收到后单轮调用一次 LLM 就返回。问题有三：
 
-1. **没有"编排"可言**：整条链路只是 RPC 顺序调用，"多智能体协作"退化为"一个 Agent 转调一次模型"，论文无从展开。
+1. **没有"编排"可言**：整条链路只是 RPC 顺序调用，"多智能体协作"退化为"一个 Agent 转调一次模型"，项目说服力不足。
 2. **没有调度者，治理层无处落地**：注册发现、健康检查、熔断、限流都需要一个"决定把任务交给谁"的组件，否则只是给端口加了配置。
 3. **MCP 协议只用了 1/3**：只用 `tools/call`，Host 没有扮演 Host 的角色。
 
@@ -165,7 +165,7 @@ McpToolNamePrefixGenerator prefixGenerator() {
 
 ### 4.6 Trace：执行轨迹（实验数据来源）
 
-每次请求落一条结构化 trace，**这是论文实验章节的原始数据**：
+每次请求落一条结构化 trace，**这是实验与演示数据的原始来源**：
 
 ```json
 {
@@ -269,7 +269,7 @@ McpToolNamePrefixGenerator prefixGenerator() {
 | M5 | 降级与熔断：停掉一个 Server，任务不 500、能降级 | 停 8001 后"现在几点"走降级或明确报错，trace `status=DEGRADED` | ✅ 完成（2026-11-02：`DEGRADED`+`TOOL_ERROR`；3 次后 `state=OPEN`；再调 `CIRCUIT_OPEN` 且 `latencyMs=0`；`mvn test` 24/24） |
 | M6 | 实验脚本：批量跑任务集，输出 CSV/JSON 指标 | 一键跑出成功率/延迟表 | ✅ 完成（2026-11-02：30 条任务集，严格成功 25/30、宽松 27/30；P50 2.7s / P95 7.3s；直通组对照；见 `demo/eval/RESULTS.md`） |
 
-## 八、实验设计（论文用）
+## 八、实验设计（评测与演示）
 
 **对照组**
 

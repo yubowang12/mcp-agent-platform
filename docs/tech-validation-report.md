@@ -38,7 +38,7 @@
 | 本地 LLM | Ollama | 0.40.6 | 已装 qwen2.5:7b/3b、gemma3:4b、llama3.2:3b 等 |
 | 传输方式 | Streamable HTTP | MCP 规范 | 服务以独立进程监听端口，跨语言、可跨主机 |
 
-## 四、关键踩坑与解决记录（对开题/论文有参考价值）
+## 四、关键踩坑与解决记录（对后续开发有参考价值）
 
 1. **Python 3.14 + miniconda 下 `python -m venv` 的 ensurepip 失败**
    - 现象：`PermissionError` 写临时目录；根因是 Windows 上 `os.mkdir(path, 0o700)`（tempfile.mkdtemp 的内部实现）创建的目录当前用户不可写。
@@ -75,9 +75,9 @@ curl "http://localhost:8090/api/demo/add?a=1.5&b=2.5"
 curl -X POST http://localhost:8090/api/agent/run -H "Content-Type: application/json" -d '{"task":"用一句话介绍你自己"}'
 ```
 
-## 六、对毕设的启示
+## 六、对项目的启示
 
-1. **协议链路已实证**：Java 编排层通过 MCP 标准协议调用 Python Agent 完全可行，异构架构成立，开题报告的"方案可行性"有了实打实的证据。
+1. **协议链路已实证**：Java 编排层通过 MCP 标准协议调用 Python Agent 完全可行，异构架构成立，项目的"方案可行性"有了实打实的证据。
 2. **传输方式要写进设计**：生产形态用 Streamable HTTP（Agent 微服务化、可跨主机），本地调试可保留 stdio，二者统一为 MCP 协议。
-3. **工程化基础设施要提前准备**：注册中心（8001/8002 端口硬编码的问题，下一步改为服务注册发现）、健康检查、超时熔断，这是调度与治理层（论文创新点）的落点。
+3. **工程化基础设施要提前准备**：注册中心（8001/8002 端口硬编码的问题，下一步改为服务注册发现）、健康检查、超时熔断，这是调度与治理层（技术亮点）的落点。
 4. **本地模型够用**：qwen2.5:3b/7b 可用，评测实验（吞吐/延迟/成功率对比）可在本机完成，不依赖付费 API。
