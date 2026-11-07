@@ -12,25 +12,25 @@
 | 项 | 状态 |
 |---|---|
 | 项目定位 | **求职作品集**（Agent 开发 / 后端实习），毕业设计只是可能用途之一 |
-| 阶段 | **阶段一（M1~M6）已完成**；正在规划"记忆 / RAG / 安全"三块能力 |
+| 阶段 | **阶段一（M1~M6）已完成**；**记忆层 v1 规格已定稿，待实施**（见 `docs/04-memory-layer-v1.md`） |
 | 架构 | Java（Spring AI）规划型 Host `:8090` + Python MCP 服务（工具 `:8001`、Agent `:8002`）+ DashScope `qwen-plus` |
 | 测试 | **24/24**（21 单测 + 3 集成），跑在 `qwen-plus` 上 |
 | 评测 | 30 条任务集：严格 25/30（83.3%）、宽松 27/30（90%）。⚠️ 这是 **Ollama 基线**，换模型后未重跑 |
-| 文档 | 10 份（见第 6 节） |
-| 未提交 | `application.yml`（base-url 修复）+ 3 份复盘文档 + README 索引（2026-11-07 时点） |
+| 文档 | 11 份（见第 6 节） |
+| 未提交 | 无（2026-11-07 决策更新与 `docs/04` 待提交） |
 
 ## 2. 现在在做什么
 
-- 学习"完整 Agent 的组成构件"（记忆 / RAG / 安全），5 题验收 **5.5/10**；
-- 待补：**记忆写入策略**（写什么/不写什么/防记错）、**rerank**、**间接提示注入防护**；
-- 下一步：定 3 个决策 + 1 个场景，然后出「记忆层 v1」主题卡与验收标准。
+- **记忆层 v1**：规格已冻结（`docs/04-memory-layer-v1.md`），**由另一个会话实施**；
+- 已定：SQLite 存储、Java 内部访问、Host 规则写、**embedding 召回**（与 RAG 共用模型）、注入 system 段、semantic + episodic、`sessionId` 用请求体可选字段（缺省=一次性会话）；
+- 实施完成后：由我评审 + 更新本文件与 `development-protocol.md`。
 
 ## 3. 待办（按优先级）
 
 | 优先级 | 事项 | 说明 |
 |---|---|---|
-| **P0** | 记忆层 v1 | 长期记忆：写入（热路径 + 会话结束合并）、召回、防错；SQLite 存 |
-| **P1** | RAG 知识库 | 做成独立 **MCP Server**（不塞进 Host），复用工具目录/熔断/trace |
+| **P0** | 记忆层 v1 | 规格见 `docs/04-memory-layer-v1.md`：SQLite + ChatMemory（短期）+ 长期记忆（embedding 召回）。**待实施** |
+| **P1** | RAG 知识库 | 独立 **MCP Server**；与记忆共用同一 embedding 模型/维度 |
 | **P2** | 安全 | 工具白名单、检索内容当"数据"不当指令（spotlighting）、敏感信息过滤 |
 | **P3** | 工程收尾 | MCP 会话重连（重启后熔断不恢复）、CI、前端控制台 |
 | **P4** | 数据 | 用 `qwen-plus` 重跑 M6；补 `dual` 组 10 条人工复核 |
@@ -75,6 +75,7 @@ python demo/eval/run_eval.py --rescore demo/eval/results/<runId>
 | 看懂系统怎么跑（图） | `docs/01-architecture-flow.md` |
 | 背面试题 | `docs/02-interview-and-resume.md` |
 | 逐段读代码 | `docs/03-code-walkthrough.md` |
+| **实施记忆层 v1** | `docs/04-memory-layer-v1.md`（决策、表结构、验收、待定项） |
 | 架构决策与取舍 | `docs/architecture.md` |
 | 需求/设计全貌 | `docs/project-design-document.md` |
 | 开发流程、约定、M4/M5/M6 验收记录 | `docs/development-protocol.md` |
@@ -96,8 +97,9 @@ python demo/eval/run_eval.py --rescore demo/eval/results/<runId>
 ### 2026-11-07
 - **学习**：完整 Agent 的十层构件（记忆/RAG/安全/治理/评测）；5 题验收 5.5/10。
 - **结论**：需补「记忆写入策略（写什么/不写什么/防记错）、rerank、间接注入防护」三块。
-- **产出**：`docs/01-architecture-flow.md`、`docs/02-interview-and-resume.md`、`docs/03-code-walkthrough.md`、本文件。
-- **未决**：① 记忆存哪（建议 SQLite）；② 向量怎么算（建议 DashScope embedding + numpy）；③ RAG 放独立 MCP Server；④ 垂直场景（建议"求职助手"）。
+- **产出**：`docs/01-architecture-flow.md`、`docs/02-interview-and-resume.md`、`docs/03-code-walkthrough.md`、`docs/04-memory-layer-v1.md`、本文件。
+- **记忆层 v1 决策已定**：SQLite 存储；**Java 内部**访问（`ChatMemory` + `MemoryStore` 共用连接）；**Host 规则**写；**embedding 召回**（与 RAG 共用模型）；注入 **system 段**；**semantic + episodic**，procedural 不做；`sessionId` 走**请求体可选字段**（缺省一次性会话）。
+- **下一步**：由另一个会话按 `docs/04-memory-layer-v1.md` 实施；完成后回来评审，再更新本文件与 `development-protocol.md`。
 
 ### 2026-11-02
 - **完成 M6**：30 条任务集 + 批跑脚本 + 两份报告；严格 25/30、宽松 27/30。
