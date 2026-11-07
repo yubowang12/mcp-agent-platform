@@ -16,6 +16,8 @@ mcp:
     dir: E:/dsh_working/my_work/demo/logs/trace
 
 spring:
+  profiles:
+    active: local
   ai:
     openai:              # 规划型 Host：DashScope（阿里百炼）OpenAI 兼容接口
       # 注意：Spring AI 会自己拼 /v1/chat/completions，所以这里**不能**带 /v1
@@ -40,3 +42,4 @@ spring:
               url: http://127.0.0.1:8001
             agent-worker:
               url: http://127.0.0.1:8002
+

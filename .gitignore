@@ -39,6 +39,9 @@ demo/eval/results/_trace/
 
 # ---- IDE ----
 .idea/
+.vscode/
+.obsidian/
+**/.obsidian/
 *.iml
 .vscode/
 

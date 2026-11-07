@@ -131,9 +131,14 @@ mvn -s maven-settings.xml -f demo/java-mcp-client/pom.xml test
 
 | 文档 | 内容 |
 |---|---|
+| [`docs/STATUS.md`](docs/STATUS.md) | **接班入口**：当前状态、待办、约束、怎么跑、按日期倒序的进度日志 |
+| `docs/portfolio.md` | **求职用**：简历条目、60 秒 / 3 分钟讲法、高频追问、演示脚本、已知不足 |
+| `docs/01-architecture-flow.md` | **流程图解**：总览、启动、请求时序、工具包装链、熔断状态机、评测流程、数据契约 |
+| `docs/02-interview-and-resume.md` | **面试题库**：约 90 个问题 + 答法、必背数字、答题策略、简历加粗重点 |
+| `docs/03-code-walkthrough.md` | **代码走读**：按调用链逐段讲核心代码（含代码块） |
 | `docs/architecture.md` | 架构基线：规划型 Host、工具目录/命名空间/规划循环/trace/降级、M1~M6 里程碑、实验设计 |
-| `docs/project-design-document.md` | 需求分析、总体架构、核心设计、接口/数据模型、风险与创新点 |
-| `docs/development-protocol.md` | 开发协作协议（五步循环、约定、进度记录） |
+| `docs/project-design-document.md` | 需求分析、总体架构、核心设计、接口/数据模型、风险与亮点 |
+| `docs/development-protocol.md` | 开发协作协议（五步循环、约定、进度记录、M4/M5/M6 验收记录） |
 | `docs/learning-plan.md` | 学习单元与验收记录（U1~U7） |
 | `docs/tech-validation-report.md` | 阶段 0 技术验证（协议打通 + 踩坑记录） |
 
