@@ -32,6 +32,7 @@
 | **P0** | 记忆层 v1 | **已实现并提交**（`dae6bba`），70/70 测试；规格见 `docs/04-memory-layer-v1.md` |
 | **P0.5** | memory 包拆包 | **已完成**（`4d2226c`）：`shortterm / longterm / model / infra`，70/70 通过，旧包引用为 0；结构见 `docs/04-memory-layer-v1.md` §2.1.1 |
 | **P0.6** | 记忆遗忘不彻底（A6） | 过期 semantic 不再召回，但同会话 episodic 摘要仍带同一事实；修法（推荐 b：episodic 不回填任务原文）见 `docs/04-memory-layer-v1.md` §13，**未实施** |
+| **P0.7** | 过期记忆无主动清理 | `MemoryStore.purgeExpired()` 只在单测里被调用，生产代码从未调用；"过期"目前只是**召回时惰性过滤**（`findActive`），数据仍留在表里。补法（未实施）：**B. `@EnableScheduling` + 每日 `@Scheduled` 调用 `purgeExpired`**，**A. 启动时再清一次**作兜底；不需要加 `status` 字段（是否过期是 `expires_at < now` 的派生值） |
 | **P1** | RAG 知识库 | 独立 **MCP Server**；与记忆共用同一 embedding 模型/维度 |
 | **P2** | 安全 | 工具白名单、检索内容当"数据"不当指令（spotlighting）、敏感信息过滤 |
 | **P3** | 工程收尾 | MCP 会话重连（重启后熔断不恢复）、CI、前端控制台 |
@@ -110,6 +111,7 @@ python demo/eval/run_eval.py --rescore demo/eval/results/<runId>
   - A8 删库重启后表重建、0 行。
 - **部分通过**：A6。过期 semantic 本身不再召回，但同会话的 episodic 摘要里含任务原文，同一事实仍被带出（"我的邮箱是…"）。
 - **遗留**：P0.6 记忆遗忘不彻底；修法建议见 `04` §13（推荐 b：episodic 不回填任务原文）。
+- **补充观察（同轮）**：过期没有主动清理——`purgeExpired()` 只被单测调用，生产代码从未触发；过期数据只是召回时被 `findActive` 过滤掉，仍然留在 `memories` 表里。记为 **P0.7**（补法：每日 `@Scheduled` + 启动兜底，未实施）。
 - **观察**：一次回答尾部出现 "terminate" 字样（模型把工具名写进正文），与记忆无关，记为噪音。
 
 ### 2026-11-08 · 拆包完成并复核
