@@ -318,3 +318,41 @@ CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, created_at);
 | `confidence` | REAL DEFAULT 0.8 | 置信度（规则抽取的把握程度） |
 | `created_at` | TEXT NOT NULL | 写入时间（定长毫秒格式，可按字典序比较） |
 | `expires_at` | TEXT | 过期时间；NULL 表示永不过期，过期即不召回 |
+
+---
+
+## 13. 功能复核记录（2026-11-08，独立库实测）
+
+> 环境：独立 `review-memory.db` + 独立 trace 目录，qwen-plus，`mvn test` 70/70。
+
+| # | 标准 | 结果 | 证据 |
+|---|---|---|---|
+| A1 | 同 `sessionId` 记得上文 | ✅ | 两轮后 `messages(review-s1)=4`；第二轮答"你叫小明，你在准备 Agent 开发实习的岗位" |
+| A2 | 窗口裁剪 | ✅ | 11 轮（22 条）→ 表里只留 20 条，最早的 id 被淘汰（133..152） |
+| A3 | 偏好写入（带来源/置信度） | ✅ | `semantic` conf 0.8 + `episodic` conf 0.6，`source=conversation:review-s1`，`dim=1024`，episodic `expires_at` 90 天后 |
+| A4 | 跨会话召回 | ✅ | 新 session 召回 3 条（semantic 0.674 + 2 条 episodic），答"你之前在准备 Agent 开发实习的面试"；trace 含 `recalled/score/cosine` |
+| A5 | 闲聊/临时数据不写 | ✅ | 3 条瞬时任务前后 `memories` 4→4；一次性会话 `written=0` |
+| A6 | 过期记忆不召回 | ⚠️ **部分** | 过期行本身未进 `recalled`；但同会话的 episodic 摘要仍带同一事实，答案仍给出邮箱（见下） |
+| A7 | 不退化 | ✅ | `mvn test` 70/70；`run_eval --limit 5` 5/5 OK |
+| A8 | 可查看/删除/重建 | ✅ | DB 可查；`MemoryStore.forget` 有单测；删 `memory.db` 重启后表重建、0 行 |
+
+### A6 的问题：遗忘不彻底
+
+复现：
+
+1. 任务"记住：我的邮箱是 m6-review@example.com" → 同时写入 `semantic`（原句）与 `episodic`（摘要里含任务原文）；
+2. 把 `semantic.expires_at` 改到 2000 年；
+3. 问"我的邮箱是什么？" → 召回里**没有**那条 semantic，但 episodic 仍命中并带出邮箱。
+
+根因：**同一事实存了两份**（semantic 原句 + episodic 摘要里的任务原文），只过期一处不够。
+
+可选修法（待定，**未实施**）：
+
+| 方案 | 做法 | 代价 |
+|---|---|---|
+| a | 同一会话已写 semantic 就不再写 episodic | 简单；失去会话摘要 |
+| b | episodic 不再回填任务原文，只写"做了什么 + 结论" | 摘要信息量降低，但**避免 PII 二次落库**（推荐） |
+| c | 删除/过期时按 `source` 级联清理派生记忆 | 语义上合理，但"过期"自动级联容易误删其他会话摘要 |
+| d | 召回时按内容去重 + 过滤已过期来源 | 实现复杂，治标 |
+
+> 结论：A1~A5、A7、A8 通过；A6 记为**部分通过**，遗留项进 `STATUS.md` 的 backlog。
