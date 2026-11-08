@@ -8,8 +8,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 
 import java.nio.file.Path;
 import java.time.Instant;
@@ -25,7 +23,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 长期记忆写入 / 查看 / 删除 / 过期清理（A3、A6、A8 的存储侧）。
  */
-@SpringBootTest
 class SqliteMemoryStoreTest {
 
     @TempDir
