@@ -1,4 +1,4 @@
-package com.example.mcpdemo.memory;
+package com.example.mcpdemo.memory.model;
 
 /**
  * 抽取器吐出的一条候选记忆（还没落库，没有 id / 向量）。

@@ -1,6 +1,15 @@
 package com.example.mcpdemo.memory;
 
 import com.example.mcpdemo.memory.config.MemoryProperties;
+import com.example.mcpdemo.memory.longterm.EmbeddingService;
+import com.example.mcpdemo.memory.longterm.MemoryExtractor;
+import com.example.mcpdemo.memory.longterm.MemoryPromptBuilder;
+import com.example.mcpdemo.memory.longterm.MemoryRecallService;
+import com.example.mcpdemo.memory.longterm.MemoryStore;
+import com.example.mcpdemo.memory.model.MemoryCandidate;
+import com.example.mcpdemo.memory.model.MemoryRecord;
+import com.example.mcpdemo.memory.model.RecalledMemory;
+import com.example.mcpdemo.memory.model.SessionSummary;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.memory.ChatMemory;
 import lombok.extern.slf4j.Slf4j;

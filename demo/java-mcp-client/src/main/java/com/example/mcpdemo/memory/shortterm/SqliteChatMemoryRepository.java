@@ -1,4 +1,5 @@
-package com.example.mcpdemo.memory;
+package com.example.mcpdemo.memory.shortterm;
+import com.example.mcpdemo.memory.infra.SqliteMemoryDb;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;

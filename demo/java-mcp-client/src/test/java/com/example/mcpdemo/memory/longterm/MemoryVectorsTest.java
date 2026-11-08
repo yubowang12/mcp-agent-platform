@@ -1,4 +1,4 @@
-package com.example.mcpdemo.memory;
+package com.example.mcpdemo.memory.longterm;
 
 import org.junit.jupiter.api.Test;
 

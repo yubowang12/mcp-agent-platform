@@ -1,4 +1,4 @@
-package com.example.mcpdemo.memory;
+package com.example.mcpdemo.memory.infra;
 
 import com.example.mcpdemo.memory.config.MemoryProperties;
 import jakarta.annotation.PreDestroy;
@@ -94,8 +94,14 @@ public class SqliteMemoryDb {
         return dbFile;
     }
 
+    /**
+     * 关闭共享连接（bean 销毁时由 {@code @PreDestroy} 调用）。
+     *
+     * <p>拆包后测试在 {@code shortterm} / {@code longterm} 包，需要显式关闭连接
+     * 来模拟进程重启，所以这里是 public，而不是原来的包级可见。
+     */
     @PreDestroy
-    void close() {
+    public void close() {
         try {
             connection.close();
         } catch (SQLException e) {

@@ -1,4 +1,4 @@
-package com.example.mcpdemo.memory;
+package com.example.mcpdemo.memory.longterm;
 
 import com.example.mcpdemo.memory.config.MemoryProperties;
 import lombok.extern.slf4j.Slf4j;

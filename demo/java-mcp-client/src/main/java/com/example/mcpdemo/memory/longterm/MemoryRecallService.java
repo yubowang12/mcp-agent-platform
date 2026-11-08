@@ -1,6 +1,8 @@
-package com.example.mcpdemo.memory;
+package com.example.mcpdemo.memory.longterm;
 
 import com.example.mcpdemo.memory.config.MemoryProperties;
+import com.example.mcpdemo.memory.model.MemoryRecord;
+import com.example.mcpdemo.memory.model.RecalledMemory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import lombok.extern.slf4j.Slf4j;

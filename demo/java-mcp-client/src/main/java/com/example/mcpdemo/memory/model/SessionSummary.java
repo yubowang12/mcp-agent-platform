@@ -1,4 +1,4 @@
-package com.example.mcpdemo.memory;
+package com.example.mcpdemo.memory.model;
 
 import java.util.List;
 

@@ -1,4 +1,4 @@
-package com.example.mcpdemo.memory;
+package com.example.mcpdemo.memory.longterm;
 
 /**
  * 向量编解码与相似度（本版只做余弦）。

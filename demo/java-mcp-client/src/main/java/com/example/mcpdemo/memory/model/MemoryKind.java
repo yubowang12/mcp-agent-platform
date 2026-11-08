@@ -1,4 +1,4 @@
-package com.example.mcpdemo.memory;
+package com.example.mcpdemo.memory.model;
 
 /**
  * 长期记忆类型（规格第 2 节决策 6）：只做 semantic + episodic，procedural 不做。

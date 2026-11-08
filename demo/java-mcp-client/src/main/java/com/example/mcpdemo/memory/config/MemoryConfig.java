@@ -1,6 +1,6 @@
 package com.example.mcpdemo.memory.config;
 
-import com.example.mcpdemo.memory.SqliteChatMemoryRepository;
+import com.example.mcpdemo.memory.shortterm.SqliteChatMemoryRepository;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;

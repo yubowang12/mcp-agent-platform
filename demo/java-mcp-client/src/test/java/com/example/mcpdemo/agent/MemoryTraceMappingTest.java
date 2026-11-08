@@ -3,9 +3,9 @@ package com.example.mcpdemo.agent;
 import com.example.mcpdemo.agent.model.MemoryTrace;
 import com.example.mcpdemo.agent.model.TaskStatus;
 import com.example.mcpdemo.agent.model.TaskTrace;
-import com.example.mcpdemo.memory.MemoryKind;
-import com.example.mcpdemo.memory.MemoryRecord;
-import com.example.mcpdemo.memory.RecalledMemory;
+import com.example.mcpdemo.memory.model.MemoryKind;
+import com.example.mcpdemo.memory.model.MemoryRecord;
+import com.example.mcpdemo.memory.model.RecalledMemory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 

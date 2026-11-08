@@ -1,4 +1,4 @@
-package com.example.mcpdemo.memory;
+package com.example.mcpdemo.memory.model;
 
 /**
  * 一条召回结果（trace 与 system 注入都用它）。

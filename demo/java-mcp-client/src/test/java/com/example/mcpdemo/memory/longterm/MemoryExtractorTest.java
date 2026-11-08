@@ -1,6 +1,9 @@
-package com.example.mcpdemo.memory;
+package com.example.mcpdemo.memory.longterm;
 
 import com.example.mcpdemo.memory.config.MemoryProperties;
+import com.example.mcpdemo.memory.model.MemoryCandidate;
+import com.example.mcpdemo.memory.model.MemoryKind;
+import com.example.mcpdemo.memory.model.SessionSummary;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

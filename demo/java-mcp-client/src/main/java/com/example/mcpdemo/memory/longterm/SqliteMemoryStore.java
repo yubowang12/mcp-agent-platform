@@ -1,4 +1,7 @@
-package com.example.mcpdemo.memory;
+package com.example.mcpdemo.memory.longterm;
+import com.example.mcpdemo.memory.infra.SqliteMemoryDb;
+import com.example.mcpdemo.memory.model.MemoryKind;
+import com.example.mcpdemo.memory.model.MemoryRecord;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;

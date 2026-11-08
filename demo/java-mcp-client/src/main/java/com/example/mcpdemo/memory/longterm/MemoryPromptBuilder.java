@@ -1,4 +1,5 @@
-package com.example.mcpdemo.memory;
+package com.example.mcpdemo.memory.longterm;
+import com.example.mcpdemo.memory.model.RecalledMemory;
 
 import org.springframework.stereotype.Component;
 

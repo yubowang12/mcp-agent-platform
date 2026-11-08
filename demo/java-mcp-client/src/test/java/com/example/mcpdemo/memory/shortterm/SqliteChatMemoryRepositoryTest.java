@@ -1,6 +1,7 @@
-package com.example.mcpdemo.memory;
+package com.example.mcpdemo.memory.shortterm;
 
 import com.example.mcpdemo.memory.config.MemoryProperties;
+import com.example.mcpdemo.memory.infra.SqliteMemoryDb;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

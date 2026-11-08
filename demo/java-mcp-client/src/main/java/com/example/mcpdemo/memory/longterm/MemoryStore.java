@@ -1,4 +1,6 @@
-package com.example.mcpdemo.memory;
+package com.example.mcpdemo.memory.longterm;
+import com.example.mcpdemo.memory.model.MemoryKind;
+import com.example.mcpdemo.memory.model.MemoryRecord;
 
 import java.time.Instant;
 import java.util.List;

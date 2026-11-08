@@ -1,4 +1,7 @@
-package com.example.mcpdemo.memory;
+package com.example.mcpdemo.memory.longterm;
+import com.example.mcpdemo.memory.model.MemoryKind;
+import com.example.mcpdemo.memory.model.MemoryRecord;
+import com.example.mcpdemo.memory.model.RecalledMemory;
 
 import org.junit.jupiter.api.Test;
 
