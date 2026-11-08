@@ -79,6 +79,12 @@ com/example/mcpdemo/memory/
 
 依赖方向：`AgentMemory` → `shortterm` / `longterm` → `model` / `infra`；`shortterm` 与 `longterm` 互不依赖。
 
+拆包时两个注意点：
+1. **测试必须与实现同包**：`MemoryRecallService.decay()` 是包级私有，测试放错包会编译失败；
+2. **包外 import 只有 4 个文件**：`TaskContext`、`TaskOrchestrator`、`MemoryTraceMappingTest`、`MemoryConfig`（其余是包内引用，跟着类走）。
+
+> 执行步骤（迁移表、命令、验收）以对话中给出的 prompt 为准，不再单独落文件；完成后在此补充"已拆分"与测试结果。
+
 ## 2.2 一次请求的顺序（编号即执行顺序）
 
 ```

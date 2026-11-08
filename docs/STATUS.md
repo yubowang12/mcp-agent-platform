@@ -30,7 +30,7 @@
 | 优先级 | 事项 | 说明 |
 |---|---|---|
 | **P0** | 记忆层 v1 | **已实现并提交**（`dae6bba`），70/70 测试；规格见 `docs/04-memory-layer-v1.md` |
-| **P0.5** | memory 包拆包 | 扁平包 → `shortterm / longterm / model / infra`；执行 prompt 见 `docs/05-memory-refactor-prompt.md`，**待另一会话执行** |
+| **P0.5** | memory 包拆包 | 扁平包 → `shortterm / longterm / model / infra`；目标结构与注意点见 `docs/04-memory-layer-v1.md` §2.1.1，**待另一会话执行** |
 | **P1** | RAG 知识库 | 独立 **MCP Server**；与记忆共用同一 embedding 模型/维度 |
 | **P2** | 安全 | 工具白名单、检索内容当"数据"不当指令（spotlighting）、敏感信息过滤 |
 | **P3** | 工程收尾 | MCP 会话重连（重启后熔断不恢复）、CI、前端控制台 |
@@ -76,8 +76,8 @@ python demo/eval/run_eval.py --rescore demo/eval/results/<runId>
 | 看懂系统怎么跑（图） | `docs/01-architecture-flow.md` |
 | 背面试题 | `docs/02-interview-and-resume.md` |
 | 逐段读代码 | `docs/03-code-walkthrough.md` |
-| **实施记忆层 v1** | `docs/04-memory-layer-v1.md`（决策、表结构、验收、待定项） |
-| **执行记忆层拆包** | `docs/05-memory-refactor-prompt.md`（可直接粘给另一个会话） |
+| **实施记忆层 v1** | `docs/04-memory-layer-v1.md`（决策、表结构、验收） |
+| **拆包目标结构** | `docs/04-memory-layer-v1.md` §2.1.1（执行步骤见对话记录） |
 | 架构决策与取舍 | `docs/architecture.md` |
 | 需求/设计全貌 | `docs/project-design-document.md` |
 | 开发流程、约定、M4/M5/M6 验收记录 | `docs/development-protocol.md` |
@@ -102,9 +102,9 @@ python demo/eval/run_eval.py --rescore demo/eval/results/<runId>
   - `dae6bba feat(memory): memory layer v1 ...`（实现 + 测试 + 文档，70/70）
   - `39a9190 chore(eval): add 2026-11-07 dual run results`
 - **文档**：
-  - `04` 加 2.1.1「目录结构（拆包目标）」并注明当前仍是扁平包；
-  - 新建 `docs/05-memory-refactor-prompt.md`：拆包执行 prompt（目标包、迁移表、import 影响、约束、验收）。
-- **下一步**：拆包由另一会话按 `05` 执行；完成后评审并更新本节。
+  - `04` 加 2.1.1「目录结构（拆包目标）」并注明当前仍是扁平包，附两条注意点（测试同包、4 处外部 import）；
+  - 拆包执行步骤直接在对话中给出（不落文件），避免多一份容易过期的 prompt。
+- **下一步**：另一会话按对话中的步骤执行拆包；完成后评审并更新本节。
 
 ### 2026-11-07 · 记忆层 v1 第 4 步：trace 字段 + 回归（**四步实施完成，待评审**）
 
