@@ -45,7 +45,39 @@ SqliteMemoryDb ─────────────────────�
 配置：MemoryConfig 装配 ChatMemory；MemoryProperties（mcp.memory.*）注入各组件
 ```
 
-本次改动范围：新增 `memory` 包（18 个类）；修改 `TaskController`、`TaskOrchestrator`、`TaskContext`、`TaskTrace`、`DemoController`、`application.yml`。
+本次改动范围：新增 `memory` 包（17 个类）；修改 `TaskController`、`TaskOrchestrator`、`TaskContext`、`TaskTrace`、`DemoController`、`application.yml`。
+
+### 2.1.1 目录结构（拆包目标）
+
+> **当前代码仍是扁平包**（17 个文件全在 `memory/` 下）。执行 `docs/05-memory-refactor-prompt.md` 后变成下面结构；只挪包、不改行为。
+
+```
+com/example/mcpdemo/memory/
+├── AgentMemory.java                 门面（编排层唯一依赖）
+├── config/
+│   ├── MemoryConfig.java            装配 ChatMemory
+│   └── MemoryProperties.java        mcp.memory.*
+├── shortterm/
+│   └── SqliteChatMemoryRepository.java
+├── longterm/
+│   ├── MemoryStore.java             接口
+│   ├── SqliteMemoryStore.java
+│   ├── MemoryExtractor.java
+│   ├── MemoryRecallService.java
+│   ├── MemoryPromptBuilder.java
+│   ├── EmbeddingService.java
+│   └── MemoryVectors.java
+├── model/
+│   ├── MemoryKind.java
+│   ├── MemoryRecord.java
+│   ├── RecalledMemory.java
+│   ├── MemoryCandidate.java
+│   └── SessionSummary.java
+└── infra/
+    └── SqliteMemoryDb.java          连接 + 建表，两个 Repository 共用
+```
+
+依赖方向：`AgentMemory` → `shortterm` / `longterm` → `model` / `infra`；`shortterm` 与 `longterm` 互不依赖。
 
 ## 2.2 一次请求的顺序（编号即执行顺序）
 
