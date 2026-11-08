@@ -30,7 +30,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class DemoController {
 
+    /** 已连接的 MCP 客户端（每台 Python MCP Server 一个，由 starter 自动装配）。 */
     private final List<McpSyncClient> clients;
+    /** 按 server 名管理的熔断器（M5：/api/servers 用它展示健康状态）。 */
     private final CircuitBreakerRegistry circuitBreakers;
 
     public DemoController(List<McpSyncClient> clients, CircuitBreakerRegistry circuitBreakers) {

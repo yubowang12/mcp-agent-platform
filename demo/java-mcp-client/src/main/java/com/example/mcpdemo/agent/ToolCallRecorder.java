@@ -24,10 +24,18 @@ public final class ToolCallRecorder {
     /** 被熔断器拦截（未真正调用工具）。 */
     public static final String CIRCUIT_OPEN = "CIRCUIT_OPEN";
 
-    /** 一次工具调用的结果；{@code errorCode} 为 null 表示成功。 */
+    /**
+     * 一次工具调用的结果。
+     *
+     * @param toolName  工具名（前缀化之后的名字，如 {@code demotools_get_time}）
+     * @param latencyMs 本次耗时（毫秒；被熔断拒绝时约等于 0）
+     * @param ok        是否成功
+     * @param errorCode 失败原因码（{@link #TOOL_TIMEOUT} / {@link #TOOL_ERROR} / {@link #CIRCUIT_OPEN}），成功为 null
+     */
     public record CallRecord(String toolName, long latencyMs, boolean ok, String errorCode) {
     }
 
+    /** 当前线程的调用记录（写读都限定在请求线程内，天然隔离并发请求）。 */
     private static final ThreadLocal<List<CallRecord>> RECORDS =
             ThreadLocal.withInitial(ArrayList::new);
 

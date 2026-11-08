@@ -27,13 +27,16 @@ import java.util.concurrent.TimeoutException;
  */
 public class TimeoutToolCallback implements ToolCallback {
 
+    /** 超时隔离线程池：守护线程，卡住的工具调用不会拖住 JVM 退出。 */
     private static final ExecutorService POOL = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "tool-timeout");
         t.setDaemon(true);
         return t;
     });
 
+    /** 被包装的内层回调（通常是某个 MCP 工具）。 */
     private final ToolCallback delegate;
+    /** 单次工具调用超时（秒），来自 {@code mcp.planner.tool-timeout-seconds}。 */
     private final long timeoutSeconds;
 
     public TimeoutToolCallback(ToolCallback delegate, long timeoutSeconds) {

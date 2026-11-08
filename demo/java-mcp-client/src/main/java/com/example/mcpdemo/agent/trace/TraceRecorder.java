@@ -3,9 +3,9 @@ package com.example.mcpdemo.agent.trace;
 import com.example.mcpdemo.agent.model.TaskTrace;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -28,12 +28,13 @@ import java.time.LocalDate;
  *   <li>落盘失败只记日志、不抛异常——trace 是辅助数据，不能拖垮任务。</li>
  * </ul>
  */
+@Slf4j
 @Component
 public class TraceRecorder {
 
-    private static final Logger log = LoggerFactory.getLogger(TraceRecorder.class);
-
+    /** JSON 序列化器（Spring 注入，与 /api/task 响应体同一套 Jackson 配置）。 */
     private final ObjectMapper objectMapper;
+    /** trace 输出目录（按日期切文件：{@code yyyy-MM-dd.jsonl}）。 */
     private final Path traceDir;
 
     public TraceRecorder(ObjectMapper objectMapper,

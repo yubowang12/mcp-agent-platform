@@ -218,7 +218,26 @@ flowchart TD
   "degraded": false,
   "errorCode": null,
   "errorMessage": null,
-  "degradedSteps": []
+  "degradedSteps": [],
+  "memory": {                          // 记忆层 v1：本次召回/写入了什么（可解释"为什么记得"）
+    "conversationId": "u-1-s-1",       // 会话 id（请求没带 sessionId 时为自动生成的 s-<uuid>）
+    "userId": "u-1",                   // 用户 id（长期记忆按它隔离）
+    "recalled": [{                     // 召回的长期记忆：按 score 降序，最多 top-k 条
+      "id": "6f1c9a2e-...",            // 记忆 uuid（可查看/可删除）
+      "kind": "semantic",              // semantic | episodic
+      "text": "用户偏好 Java 后端",     // 正文（trace 里截断 120 字）
+      "score": 0.82,                   // 最终分 = 余弦 × 时间衰减（排序依据）
+      "cosine": 0.86                   // 原始余弦（解释"为什么召回它"）
+    }],
+    "written": [{                      // 本次新写入的长期记忆（重复内容不重复写，可能为空）
+      "id": "a2b7d1f0-...",            // 记忆 uuid
+      "kind": "episodic",              // semantic | episodic
+      "text": "会话摘要｜任务：…",      // 正文（截断 120 字）
+      "confidence": 0.6,               // 置信度（"记住"0.95 / 规则 0.8 / 摘要 0.6）
+      "source": "conversation:u-1-s-1" // 来源
+    }],
+    "injectedChars": 338               // 注入 system 段的字符数（上下文膨胀度量）
+  }
 }
 ```
 
@@ -233,5 +252,18 @@ flowchart TD
 | `mcp.circuit.failure-threshold` | 3 | 连续失败阈值 | 多快熔断 |
 | `mcp.circuit.open-seconds` | 30 | 冷却时长 | 多快恢复 |
 | `mcp.circuit.half-open-permits` | 1 | 半开并发探测数 | 恢复期打压力度 |
+| `mcp.trace.dir` | `demo/logs/trace` | trace JSONL 输出目录 | 排查时去哪找记录 |
+| `mcp.memory.enabled` | `true` | 记忆层总开关 | 关掉等于退回 M6 行为 |
+| `mcp.memory.db-path` | `demo/logs/memory/memory.db` | SQLite 单文件路径 | 删库即"重建记忆" |
+| `mcp.memory.window.max-messages` | 20 | 短期记忆窗口（条） | 一个会话能记住多少轮 |
+| `mcp.memory.recall.top-k` | 5 | 每次召回条数 | 注入量、上下文膨胀 |
+| `mcp.memory.recall.min-score` | 0.35 | 余弦相似度下限 | 宁缺毋滥 vs 多召回 |
+| `mcp.memory.recall.half-life-days` | 30 | 时间衰减半衰期（天） | 旧记忆的权重 |
+| `mcp.memory.embedding.enabled` | `true` | 是否调用 embedding | 关掉只写不召回 |
+| `mcp.memory.embedding.model` | `text-embedding-v3` | embedding 模型（与 RAG 共用） | 换它必须重建向量 |
+| `mcp.memory.embedding.dimensions` | 1024 | 向量维度（实测值） | 换模型要同步改 |
+| `mcp.memory.extract.enabled` | `true` | 是否抽取长期记忆 | 只读不写模式 |
+| `mcp.memory.extract.default-confidence` | 0.8 | 规则命中置信度 | 以后按阈值清理记忆 |
+| `mcp.memory.extract.episodic-ttl-days` | 90 | 会话摘要保留天数 | 过期后不再被召回 |
 | `spring.ai.openai.base-url` | `.../compatible-mode`（**不带 /v1**） | 模型接口 | 配错直接 404 |
 | `LLM_MODEL`（Python） | `qwen-plus` | 执行器模型 | 摘要/翻译质量 |

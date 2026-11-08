@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class PlannerController {
 
+    /** 规划用 LLM 客户端（由自动装配的 Builder 构建，模型/温度来自 application.yml）。 */
     private final ChatClient chatClient;
 
     public PlannerController(ChatClient.Builder chatClientBuilder) {

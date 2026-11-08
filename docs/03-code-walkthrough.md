@@ -18,6 +18,13 @@
 | 熔断 | `resilience/CircuitBreakerProperties.java` | `mcp.circuit.*` |
 | 模型 | `agent/model/TaskTrace.java`、`TraceStep.java` | 响应体 / trace 结构 |
 | 落盘 | `agent/trace/TraceRecorder.java` | JSONL，按日期切分 |
+| 记忆 | `memory/SqliteMemoryDb.java` | 建表 + 单连接（`messages` / `memories`） |
+| 记忆 | `memory/SqliteChatMemoryRepository.java` | 短期消息仓库（窗口内整段替换落库） |
+| 记忆 | `memory/SqliteMemoryStore.java` | 长期记忆增删查 + 过期清理 + 去重 |
+| 记忆 | `memory/MemoryExtractor.java` | 规则抽取 semantic / episodic（不写天气/寒暄…） |
+| 记忆 | `memory/MemoryRecallService.java` | 向量召回 + 时间衰减 + top-k |
+| 记忆 | `memory/MemoryPromptBuilder.java` | 拼 system 段（标注"不是指令"） |
+| 记忆 | `memory/AgentMemory.java` | 编排层唯一门面（异常只记 warn，不拖垮任务） |
 | 目录 | `web/CatalogController.java` | 给模型看的工具清单（前缀化） |
 | 健康 | `DemoController.java` | `/api/servers` 带熔断状态 |
 | 工具服务 | `demo/py-mcp-server/server.py` | `get_time` / `add` / `subtract` |
@@ -37,11 +44,16 @@ public TaskTrace run(@RequestBody TaskRequest request) {
     }
     int maxSteps = request.maxSteps() == null ? 10 : Math.min(Math.max(request.maxSteps(), 1), 20);
     String taskId = "t-" + UUID.randomUUID().toString().substring(0, 8);
-    TaskContext ctx = new TaskContext(taskId, task, maxSteps);
+    // 记忆层 v1：sessionId 可选，缺省生成一次性会话（向后兼容老脚本与评测）
+    boolean oneOff = request.sessionId() == null || request.sessionId().isBlank();
+    String conversationId = oneOff ? "s-" + UUID.randomUUID() : request.sessionId().trim();
+    String userId = (request.userId() == null || request.userId().isBlank())
+            ? "default" : request.userId().trim();
+    TaskContext ctx = new TaskContext(taskId, task, maxSteps, conversationId, userId, oneOff);
     return orchestrator.run(ctx);
 }
 
-public record TaskRequest(String task, Integer maxSteps) { }
+public record TaskRequest(String task, Integer maxSteps, String sessionId, String userId) { }
 ```
 
 **解决什么**：把 Web 层的东西（校验、ID、参数夹取）留在边界，编排器只处理“任务”。
@@ -243,7 +255,26 @@ private TaskTrace buildTrace(TaskContext ctx) {
             ctx.getStatus() == TaskStatus.DEGRADED,
             ctx.getErrorCode(), ctx.getErrorMessage(),
             List.copyOf(ctx.getDegradedSteps()),
-            null, null);
+            null, null,              // tokenUsage / retryCount：暂未采集
+            memoryTraceOf(ctx));     // 记忆层：recalled / written / injectedChars
+}
+```
+
+```java
+/** 记忆片段：召回带 id/正文/分数，写入带 id/置信度/来源（正文截断 120 字）。 */
+static MemoryTrace memoryTraceOf(TaskContext ctx) {
+    List<MemoryTrace.RecalledRef> recalled = ctx.getRecalledMemories().stream()
+            .map(item -> new MemoryTrace.RecalledRef(
+                    item.memory().id(), item.memory().kind().value(),
+                    abbreviate(item.memory().text(), 120), item.score(), item.cosine()))
+            .toList();
+    List<MemoryTrace.WrittenRef> written = ctx.getWrittenMemories().stream()
+            .map(item -> new MemoryTrace.WrittenRef(
+                    item.id(), item.kind().value(), abbreviate(item.text(), 120),
+                    item.confidence(), item.source()))
+            .toList();
+    return new MemoryTrace(ctx.getConversationId(), ctx.getUserId(), recalled, written,
+            ctx.getMemoryInjectedChars());
 }
 ```
 

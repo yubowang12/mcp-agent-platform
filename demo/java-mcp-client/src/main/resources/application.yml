@@ -14,6 +14,24 @@ mcp:
     half-open-permits: 1
   trace:
     dir: E:/dsh_working/my_work/demo/logs/trace
+  # 记忆层 v1（docs/04-memory-layer-v1.md）：SQLite 单文件 + 短期窗口 + 长期向量召回
+  memory:
+    enabled: true
+    db-path: E:/dsh_working/my_work/demo/logs/memory/memory.db
+    window:
+      max-messages: 20          # A2：超过窗口只留最近 20 条
+    recall:
+      top-k: 5                  # 每次召回最多 5 条
+      min-score: 0.35           # 余弦相似度下限，低于它不注入
+      half-life-days: 30        # 时间衰减半衰期（越旧权重越低）
+    embedding:                  # 2026-11-07 实测：/compatible-mode/v1/embeddings 可用
+      enabled: true             # text-embedding-v3 默认 1024 维，dimensions=768 也实测通过
+      model: text-embedding-v3
+      dimensions: 1024          # 写进配置，不写死在代码里；与 RAG 共用
+    extract:
+      enabled: true
+      default-confidence: 0.8
+      episodic-ttl-days: 90
 
 spring:
   profiles:
@@ -28,6 +46,10 @@ spring:
         options:
           model: qwen-plus
           temperature: 0.3
+      embedding:           # 记忆层/RAG 共用的 embedding（与上面同一套 base-url + key）
+        options:
+          model: text-embedding-v3   # embedding 模型名（与 mcp.memory.embedding.model 保持一致）
+          dimensions: 1024           # 向量维度（实测 text-embedding-v3 默认 1024）
     mcp:
       client:            # 客户端配置：本 Java 应用作为 MCP Client，连接 Python 微服务
         enabled: true

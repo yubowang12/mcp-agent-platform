@@ -24,11 +24,16 @@ import java.time.Instant;
  */
 public class CircuitBreaker {
 
+    /** 熔断器所属的 MCP Server 名（如 {@code demo-tools}），用于日志与状态展示。 */
     private final String serverKey;
+    /** 熔断参数（阈值/冷却/探测额度），来自 {@code mcp.circuit.*}。 */
     private final CircuitBreakerProperties props;
+    /** 时钟来源；生产用系统时钟，测试注入假时钟以便拨时间而不 sleep。 */
     private final Clock clock;
+    /** 状态变化回调（registry 用它递增版本号，触发工具目录重建）；可为 null。 */
     private final Runnable onStateChange;
 
+    /** 当前状态，初始 CLOSED。 */
     private CircuitState state = CircuitState.CLOSED;
     /** CLOSED 期的连续失败次数；任何一次成功清零。 */
     private int consecutiveFailures;

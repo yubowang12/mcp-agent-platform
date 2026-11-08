@@ -9,6 +9,7 @@ import org.springframework.ai.tool.annotation.Tool;
  */
 public class TerminateTool {
 
+    /** 工具名：编排器靠它识别"模型要求结束"，与 OpenManus 的命名保持一致。 */
     public static final String TOOL_NAME = "terminate";
 
     @Tool(name = TOOL_NAME, description = "当任务已完成，或无法继续推进时调用本工具来终止任务。")

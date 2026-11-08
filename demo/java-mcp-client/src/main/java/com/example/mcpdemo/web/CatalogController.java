@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class CatalogController {
 
+    /** 模型视角的工具目录（前缀化后的工具名/描述/schema，构造时一次性建好）。 */
     private final SyncMcpToolCallbackProvider callbackProvider;
 
     public CatalogController(List<McpSyncClient> clients, McpToolNamePrefixGenerator prefixGenerator) {

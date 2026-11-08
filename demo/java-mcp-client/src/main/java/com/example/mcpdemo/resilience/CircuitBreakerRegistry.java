@@ -18,9 +18,13 @@ import java.util.concurrent.atomic.AtomicLong;
 @Component
 public class CircuitBreakerRegistry {
 
+    /** server 名 → 熔断器（并发安全，按需创建，一个 server 一个）。 */
     private final Map<String, CircuitBreaker> breakers = new ConcurrentHashMap<>();
+    /** 状态版本号：任意熔断器状态变化即 +1，编排器据此判断工具表要不要重建。 */
     private final AtomicLong version = new AtomicLong();
+    /** 熔断参数，创建新熔断器时传入。 */
     private final CircuitBreakerProperties props;
+    /** 时钟来源；生产用系统时钟，测试注入假时钟。 */
     private final Clock clock;
 
     /** 生产用：系统时钟。 */

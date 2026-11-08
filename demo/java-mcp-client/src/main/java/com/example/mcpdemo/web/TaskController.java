@@ -20,6 +20,7 @@ import java.util.UUID;
 @RequestMapping("/api")
 public class TaskController {
 
+    /** 编排器（无状态，可单例复用；/api/task 的全部编排逻辑都在它里面）。 */
     private final TaskOrchestrator orchestrator;
 
     public TaskController(TaskOrchestrator orchestrator) {
@@ -34,10 +35,22 @@ public class TaskController {
         }
         int maxSteps = request.maxSteps() == null ? 10 : Math.min(Math.max(request.maxSteps(), 1), 20);
         String taskId = "t-" + UUID.randomUUID().toString().substring(0, 8);
-        TaskContext ctx = new TaskContext(taskId, task, maxSteps);
+        // 记忆层 v1（规格第 7 节，已定 A）：sessionId 可选，缺省生成一次性会话，向后兼容现有脚本与评测
+        boolean oneOff = request.sessionId() == null || request.sessionId().isBlank();
+        String conversationId = oneOff ? "s-" + UUID.randomUUID() : request.sessionId().trim();
+        String userId = (request.userId() == null || request.userId().isBlank())
+                ? "default"
+                : request.userId().trim();
+        TaskContext ctx = new TaskContext(taskId, task, maxSteps, conversationId, userId, oneOff);
         return orchestrator.run(ctx);
     }
 
-    public record TaskRequest(String task, Integer maxSteps) {
+    /**
+     * /api/task 请求体。
+     *
+     * <p>{@code sessionId} / {@code userId} 都是可选的：老调用方（脚本、M6 评测）不传也能跑，
+     * 传了才启用短期历史与跨会话长期记忆。
+     */
+    public record TaskRequest(String task, Integer maxSteps, String sessionId, String userId) {
     }
 }

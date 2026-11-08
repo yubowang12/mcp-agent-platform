@@ -1,12 +1,16 @@
 package com.example.mcpdemo.agent;
 
 import com.example.mcpdemo.agent.model.AgentState;
+import com.example.mcpdemo.agent.model.MemoryTrace;
 import com.example.mcpdemo.agent.model.TaskStatus;
 import com.example.mcpdemo.agent.model.TaskTrace;
 import com.example.mcpdemo.agent.model.TraceStep;
 import com.example.mcpdemo.agent.trace.TraceRecorder;
 import com.example.mcpdemo.config.McpToolPrefixConfig;
 import com.example.mcpdemo.config.PlannerProperties;
+import com.example.mcpdemo.memory.AgentMemory;
+import com.example.mcpdemo.memory.RecalledMemory;
+import com.example.mcpdemo.memory.SessionSummary;
 import com.example.mcpdemo.resilience.CircuitBreakerRegistry;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -25,6 +29,7 @@ import org.springframework.ai.model.tool.ToolExecutionResult;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -75,26 +80,37 @@ public class TaskOrchestrator {
             - 最终答复只给结果，不要复述输入
             """;
 
+    /** 规划用 LLM 客户端（由自动装配的 Builder 构建）。 */
     private final ChatClient chatClient;
+    /** 工具表：MCP 工具（前缀 → 超时 → 熔断）+ 本地 terminate。 */
     private final ToolCallback[] tools;
+    /** 工具执行器：负责执行 tool_calls 并把结果回填成对话历史。 */
     private final ToolCallingManager toolCallingManager;
+    /** trace 落盘器。 */
     private final TraceRecorder traceRecorder;
+    /** 编排层配置（模型名、各级超时）。 */
     private final PlannerProperties props;
+    /** 熔断器注册表（构造工具表时按 server 取熔断器）。 */
     private final CircuitBreakerRegistry circuitBreakers;
+    /** 记忆层门面（历史 / 召回 / 写入）；记忆禁用时为 {@link AgentMemory#disabled()}。 */
+    private final AgentMemory memory;
     /** 前缀名（sanitize 后） -> 原始 server 名，用于 trace.serverKey。 */
     private final Map<String, String> serverNamesByPrefix;
 
+    @Autowired
     public TaskOrchestrator(ChatClient.Builder chatClientBuilder,
                             List<McpSyncClient> mcpClients,
                             McpToolNamePrefixGenerator mcpToolNamePrefixGenerator,
                             TraceRecorder traceRecorder,
                             PlannerProperties props,
-                            CircuitBreakerRegistry circuitBreakers) {
+                            CircuitBreakerRegistry circuitBreakers,
+                            AgentMemory memory) {
         this.chatClient = chatClientBuilder.build();
         this.toolCallingManager = ToolCallingManager.builder().build();
         this.traceRecorder = traceRecorder;
         this.props = props;
         this.circuitBreakers = circuitBreakers;
+        this.memory = memory;
         // 先建“前缀 -> server 名”映射：给工具包熔断器时要按 server 取熔断器
         Map<String, String> serverNames = new LinkedHashMap<>();
         for (McpSyncClient client : mcpClients) {
@@ -127,11 +143,40 @@ public class TaskOrchestrator {
     }
 
     /**
+     * 兼容旧调用方（单测直接 new 出来的场景）：不接记忆层。
+     */
+    public TaskOrchestrator(ChatClient.Builder chatClientBuilder,
+                            List<McpSyncClient> mcpClients,
+                            McpToolNamePrefixGenerator mcpToolNamePrefixGenerator,
+                            TraceRecorder traceRecorder,
+                            PlannerProperties props,
+                            CircuitBreakerRegistry circuitBreakers) {
+        this(chatClientBuilder, mcpClients, mcpToolNamePrefixGenerator, traceRecorder, props,
+                circuitBreakers, AgentMemory.disabled());
+    }
+
+    /**
      * 执行一次任务。
      */
     public TaskTrace run(TaskContext ctx) {
         ctx.setState(AgentState.RUNNING);
+        // 记忆层 v1（第 1 步）：同一 sessionId 先把历史消息读回来，再接本次任务
+        List<Message> history = memory.history(ctx.getConversationId());
+        if (!history.isEmpty()) {
+            ctx.getMessages().addAll(history);
+            log.info("载入会话历史: conversationId={}, {} 条", ctx.getConversationId(), history.size());
+        }
         ctx.getMessages().add(new UserMessage(ctx.getTask()));
+
+        // 记忆层 v1（第 3 步）：跨会话长期记忆召回 → 拼成 system 段注入（标注"不是指令"）
+        List<RecalledMemory> recalled = memory.recall(ctx.getUserId(), ctx.getTask());
+        ctx.getRecalledMemories().addAll(recalled);
+        String memorySection = memory.promptSection(recalled);
+        if (!memorySection.isBlank()) {
+            ctx.setMemoryInjectedChars(memorySection.length());
+            log.info("注入长期记忆: userId={}, {} 条, {} 字", ctx.getUserId(), recalled.size(),
+                    memorySection.length());
+        }
 
         // 工具回调同时挂在 ChatOptions 上：模型调用用它，executeToolCalls 也用它按名字解析。
         // DashScope / DeepSeek 都是 OpenAI 兼容接口，按 OpenAI 的 options 走。
@@ -152,7 +197,7 @@ public class TaskOrchestrator {
 
                 long llmStart = System.nanoTime();
                 Prompt prompt = new Prompt(ctx.getMessages(), options);
-                ChatResponse response = callLlm(prompt, ctx.getMaxSteps());
+                ChatResponse response = callLlm(prompt, ctx.getMaxSteps(), memorySection);
                 log.info("{}的思考: {}", props.model(), response.getResult().getOutput().getText());
                 log.info("{}选择了 {} 个工具调用, 分别是: {}", props.model(),
                         response.getResult().getOutput().getToolCalls().size(),
@@ -178,7 +223,7 @@ public class TaskOrchestrator {
                         ctx.setAnswerRetried(true);
                         ctx.getMessages().add(new UserMessage("请基于已有信息给出最终答复，不要调用工具。"));
                         Prompt retryPrompt = new Prompt(ctx.getMessages(), options);
-                        ChatResponse retryResponse = callLlm(retryPrompt, ctx.getMaxSteps());
+                        ChatResponse retryResponse = callLlm(retryPrompt, ctx.getMaxSteps(), memorySection);
                         AssistantMessage retryMessage = retryResponse.getResult().getOutput();
                         String retryText = retryMessage.getText();
                         if (!isBlank(retryText) && retryMessage.getToolCalls().isEmpty()) {
@@ -270,6 +315,7 @@ public class TaskOrchestrator {
 
         fillFallbackAnswer(ctx);
         markDegradedIfNeeded(ctx);     // 有失败步骤但仍有答案 → DEGRADED
+        persistTurn(ctx);              // 记忆层 v1：会话结束写回短期记忆
         TaskTrace trace = buildTrace(ctx);
         traceRecorder.append(trace);   // 成功/失败都落盘（落盘失败只记日志）
         return trace;
@@ -278,9 +324,9 @@ public class TaskOrchestrator {
     /**
      * 带超时的 LLM 调用：超时则取消任务并抛 {@link LlmTimeoutException}（由 run 统一处理）。
      */
-    private ChatResponse callLlm(Prompt prompt, int maxSteps) throws Exception {
+    private ChatResponse callLlm(Prompt prompt, int maxSteps, String memorySection) throws Exception {
         Future<ChatResponse> future = LLM_POOL.submit(() ->
-                chatClient.prompt(prompt).system(systemPrompt(maxSteps)).call().chatResponse());
+                chatClient.prompt(prompt).system(systemPrompt(maxSteps, memorySection)).call().chatResponse());
         try {
             return future.get(props.llmTimeoutSeconds(), TimeUnit.SECONDS);
         } catch (TimeoutException e) {
@@ -308,8 +354,9 @@ public class TaskOrchestrator {
                 .orElseGet(() -> new ToolCallRecorder.CallRecord(toolName, 0L, true, null));
     }
 
-    private static String systemPrompt(int maxSteps) {
-        return String.format(SYSTEM_PROMPT_TEMPLATE, maxSteps);
+    private static String systemPrompt(int maxSteps, String memorySection) {
+        String base = String.format(SYSTEM_PROMPT_TEMPLATE, maxSteps);
+        return memorySection == null || memorySection.isBlank() ? base : base + "\n" + memorySection;
     }
 
     private static boolean isBlank(String s) {
@@ -370,6 +417,31 @@ public class TaskOrchestrator {
         ctx.setFinalAnswer(answer == null ? "" : answer);
     }
 
+    /**
+     * 记忆层 v1：会话结束后把本轮写回短期记忆，并按规则抽取长期记忆。
+     *
+     * <p>只有 {@code OK} / {@code DEGRADED} 才写（有可用产出）；{@code ERROR} / {@code TIMEOUT}
+     * 的答复是兜底文案，写进历史会误导下一轮。
+     */
+    private void persistTurn(TaskContext ctx) {
+        if (ctx.getStatus() != TaskStatus.OK && ctx.getStatus() != TaskStatus.DEGRADED) {
+            return;
+        }
+        memory.recordTurn(ctx.getConversationId(), ctx.getTask(), ctx.getFinalAnswer());
+
+        List<String> tools = ctx.getSteps().stream().map(TraceStep::tool).toList();
+        SessionSummary session = new SessionSummary(
+                ctx.getConversationId(),
+                ctx.getUserId(),
+                ctx.getTask(),
+                ctx.getFinalAnswer(),
+                tools,
+                ctx.getSteps().size(),
+                true,
+                ctx.isOneOffSession());
+        ctx.getWrittenMemories().addAll(memory.writeFromSession(session));
+    }
+
     private TaskTrace buildTrace(TaskContext ctx) {
         Instant finished = Instant.now();
         return new TaskTrace(
@@ -389,7 +461,41 @@ public class TaskOrchestrator {
                 ctx.getErrorMessage(),
                 List.copyOf(ctx.getDegradedSteps()),
                 null,   // tokenUsage：M2 未采集
-                null);  // retryCount：M2 未实现
+                null,   // retryCount：M2 未实现
+                memoryTraceOf(ctx));
+    }
+
+    /**
+     * 组装 trace 的记忆片段：本次召回了什么、写入了什么、注入了多少字。
+     *
+     * <p>包级可见，便于纯单测（不需要 MCP / 模型）。
+     */
+    static MemoryTrace memoryTraceOf(TaskContext ctx) {
+        List<MemoryTrace.RecalledRef> recalled = ctx.getRecalledMemories().stream()
+                .map(item -> new MemoryTrace.RecalledRef(
+                        item.memory().id(),
+                        item.memory().kind().value(),
+                        abbreviate(item.memory().text(), 120),
+                        item.score(),
+                        item.cosine()))
+                .toList();
+        List<MemoryTrace.WrittenRef> written = ctx.getWrittenMemories().stream()
+                .map(item -> new MemoryTrace.WrittenRef(
+                        item.id(),
+                        item.kind().value(),
+                        abbreviate(item.text(), 120),
+                        item.confidence(),
+                        item.source()))
+                .toList();
+        return new MemoryTrace(ctx.getConversationId(), ctx.getUserId(), recalled, written,
+                ctx.getMemoryInjectedChars());
+    }
+
+    private static String abbreviate(String text, int max) {
+        if (text == null) {
+            return "";
+        }
+        return text.length() <= max ? text : text.substring(0, max) + "…";
     }
 
     /**
@@ -415,3 +521,4 @@ public class TaskOrchestrator {
         ctx.setDegradedSteps(failed.stream().map(TraceStep::step).toList());
     }
 }
+

@@ -19,7 +19,9 @@ import org.springframework.ai.tool.definition.ToolDefinition;
  */
 public class CircuitBreakingToolCallback implements ToolCallback {
 
+    /** 被包装的内层回调（超时包装器 → 真正的 MCP 工具）。 */
     private final ToolCallback delegate;
+    /** 该工具所属 server 的熔断器（同一 server 的所有工具共用一个实例）。 */
     private final CircuitBreaker breaker;
 
     public CircuitBreakingToolCallback(ToolCallback delegate, CircuitBreaker breaker) {
