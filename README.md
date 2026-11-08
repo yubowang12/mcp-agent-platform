@@ -17,7 +17,7 @@
 | **手写三态熔断 + 快速失败**：连续失败 3 次打开，冷却后半开探测；熔断期间调用 0ms 拒绝，不干等 45s 超时 | 停 8001 实测：`DEGRADED/TOOL_ERROR` → `OPEN` → `CIRCUIT_OPEN(0ms)` |
 | **结构化 trace 与降级口径**：每请求一条 JSONL，`status`/`errorCode`/`degradedSteps` 可归因 | `demo/logs/trace/*.jsonl`、`TaskTrace` |
 | **可复现评测**：30 条任务集 + 批跑脚本 + 严格/宽松成功率 + P50/P95 + 失败模式分布 | `demo/eval/RESULTS.md`（B-dual 严格 25/30）；`--rescore` 支持口径复算 |
-| **工程完整度**：24 个测试（21 单测 + 3 集成）、配置外置、密钥不入库、一条命令起全套服务 | `mvn test` 24/24；`demo/start-dev.ps1` |
+| **工程完整度**：70 个测试（67 单测 + 3 集成）、配置外置、密钥不入库、一条命令起全套服务 | `mvn test` 70/70；`demo/start-dev.ps1` |
 
 ## 当前进度
 
@@ -124,8 +124,8 @@ mvn -s maven-settings.xml -f demo/java-mcp-client/pom.xml -Dtest="CircuitBreaker
 mvn -s maven-settings.xml -f demo/java-mcp-client/pom.xml test
 ```
 
-2026-11-02 实测：全量 **24/24** 通过（21 个纯单测 + 3 个集成用例），trace 见 `demo/logs/trace/`。其中：
-`CircuitBreakerTest`（8）验状态机；`CircuitBreakingToolCallbackTest`（5）验熔断包装器；`TimeoutToolCallbackTest`（3）验失败判定；`TaskDegradationTest`（4）验 `DEGRADED` 规则；`NoToolsAvailableTest`（1）无工具场景；`TaskOrchestratorTest`（3）集成回归。
+2026-11-08 实测：全量 **70/70** 通过（67 个纯单测 + 3 个集成用例），trace 见 `demo/logs/trace/`。其中：
+`CircuitBreakerTest`（8）验状态机；`CircuitBreakingToolCallbackTest`（5）验熔断包装器；`TimeoutToolCallbackTest`（3）验失败判定；`TaskDegradationTest`（4）验 `DEGRADED` 规则；`NoToolsAvailableTest`（1）无工具场景；记忆层 46 个（短期仓储/抽取/召回/向量/提示词/降级）；`TaskOrchestratorTest`（3）集成回归。
 
 ## 文档索引
 

@@ -47,9 +47,9 @@ SqliteMemoryDb ─────────────────────�
 
 本次改动范围：新增 `memory` 包（17 个类）；修改 `TaskController`、`TaskOrchestrator`、`TaskContext`、`TaskTrace`、`DemoController`、`application.yml`。
 
-### 2.1.1 目录结构（拆包目标）
+### 2.1.1 目录结构（已拆分，2026-11-08）
 
-> **当前代码仍是扁平包**（17 个文件全在 `memory/` 下）。执行 `docs/05-memory-refactor-prompt.md` 后变成下面结构；只挪包、不改行为。
+> **已按此结构拆分**（commit `4d2226c`，`mvn test` 70/70）。拆包只挪文件与 import，唯一例外是 `SqliteMemoryDb.close()` 由包级可见改为 `public`——拆包后测试在 `shortterm` / `longterm` 包，需要显式关闭连接来模拟进程重启。
 
 ```
 com/example/mcpdemo/memory/
@@ -83,7 +83,7 @@ com/example/mcpdemo/memory/
 1. **测试必须与实现同包**：`MemoryRecallService.decay()` 是包级私有，测试放错包会编译失败；
 2. **包外 import 只有 4 个文件**：`TaskContext`、`TaskOrchestrator`、`MemoryTraceMappingTest`、`MemoryConfig`（其余是包内引用，跟着类走）。
 
-> 执行步骤（迁移表、命令、验收）以对话中给出的 prompt 为准，不再单独落文件；完成后在此补充"已拆分"与测试结果。
+> 执行步骤（迁移表、命令、验收）以对话中给出的 prompt 为准，不单独落文件。拆分结果：25 个文件变更、70/70 通过、旧包引用为 0。
 
 ## 2.2 一次请求的顺序（编号即执行顺序）
 
