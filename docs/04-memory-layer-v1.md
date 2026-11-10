@@ -346,7 +346,7 @@ CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, created_at);
 
 根因：**同一事实存了两份**（semantic 原句 + episodic 摘要里的任务原文），只过期一处不够。
 
-可选修法（待定，**未实施**）：
+可选修法（2026-11-08 讨论；**2026-11-10 已选 b 并实施**，见下）：
 
 | 方案 | 做法 | 代价 |
 |---|---|---|
@@ -356,3 +356,39 @@ CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, created_at);
 | d | 召回时按内容去重 + 过滤已过期来源 | 实现复杂，治标 |
 
 > 结论：A1~A5、A7、A8 通过；A6 记为**部分通过**，遗留项进 `STATUS.md` 的 backlog。
+
+### 修复记录（2026-11-10，方案 b 已实施）
+
+- **改动**：`MemoryExtractor.extractEpisodic()` 不再回填**任务原文**与**答复原文**，摘要固定为
+  `会话摘要｜工具：<工具名 / 无>｜步骤：<N>｜结论：完成`——只留"做了什么 + 结论"，事实归 semantic 管。
+- **为什么连答复也不回填**：复核复现里邮箱在**任务和答复里各出现一次**
+  （`任务：记住：我的邮箱是 …｜结果：已记录你的邮箱：…`），只去掉任务原文仍会从"结果"漏出去。
+- **实测（独立库 + 独立 trace）**：写入"记住：我的邮箱是 fix-verify@example.com" → 把 semantic 的
+  `expires_at` 改到 2000 年 → 新会话问"我的邮箱是什么？"：
+  - 召回只剩 1 条 `episodic`（`会话摘要｜工具：terminate｜步骤：1｜结论：完成`），
+    `semantic` 被 `findActive` 过滤掉；
+  - 答案"我无法访问或查询你的邮箱地址…"，**不再出现邮箱**；
+  - `select count(*) from memories where kind='episodic' and text like '%fix-verify@example.com%'` → **0**。
+- **回归测试**：`MemoryForgettingTest`（把上面三步固化）、
+  `MemoryExtractorTest.episodicDoesNotEchoTaskOrAnswer`。
+- **代价**：摘要不再带对话内容，跨会话召回主要靠 semantic（方案 b 已预期）。
+- **测试**：`mvn test` **72/72**（70 + 2 个新增）。
+- **未做**：P0.7 的主动清理——过期数据仍留在表里，只是不再被召回。
+
+### P0.7 决策（2026-11-10）：逻辑删除，不做物理清理
+
+**结论**：过期 = `expires_at < now`，召回时由 `findActive` 过滤即可；**不删数据、不加 `status` 列、不引入定时任务**。
+
+理由：
+
+- 功能上等价：过期数据永远不会进 `recalled`，也就不会进 prompt；
+- 数据量可控：只有 episodic 有 TTL（90 天），单用户每天至多 1 条，增长极慢；
+- 可回溯：排查"以前记过什么"时有原始数据可查，比物理删除更利于排障；
+- 少一个调度线程，也少一套并发/失败处理。
+
+代价与边界：
+
+- 表会缓慢增长；`list()` 仍能看到过期项——将来若对外暴露"记忆管理"接口，返回一个**派生的 `expired` 字段**即可，不要加列；
+- "过期"不等于"删除"：若将来有隐私合规诉求（用户要求清除），走显式 `forget`（硬删）或手动调用 `purgeExpired`，不做自动物理清理。
+
+`purgeExpired()` **保留**：作为手动/管理用的硬清理入口（已有单测），不接调度。

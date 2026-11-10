@@ -17,8 +17,14 @@ import java.util.List;
  * <ul>
  *   <li><b>semantic</b>：用户明确要求记住（"记住…"），或陈述了偏好 / 事实
  *       （"我喜欢…""我叫…""我在准备…"）；</li>
- *   <li><b>episodic</b>：会话摘要（任务 + 工具 + 结论），只在真的干了活、且不是一次性会话时写。</li>
+ *   <li><b>episodic</b>：会话摘要（**只写"做了什么 + 结论"**，不回填任务/答复原文），
+ *       只在真的干了活、且不是一次性会话时写。</li>
  * </ul>
+ *
+ * <p>**episodic 为什么不记原文（P0.6，方案 b）**：语义记忆已经存了一份用户原话，
+ * 摘要再抄一遍就等于同一事实存两份——过期 semantic 后，episodic 仍会把原文（可能是邮箱、
+ * 手机号这类 PII）带出来，造成"遗忘不彻底"。所以摘要只保留结构信息
+ * （工具、步数、结论），内容归 semantic 管。
  *
  * <p>**不写**（A5 的反例）：天气、时间、日期、算术、寒暄这类一次性信息——它们明天就过期，
  * 写进长期记忆只会污染召回。规则刻意保守：宁可少记，不可记错。
@@ -126,12 +132,15 @@ public class MemoryExtractor {
         if (session.usedSteps() == 0 && task.length() < MIN_EPISODIC_NO_TOOL_LENGTH) {
             return null;
         }
+        // P0.6 方案 b：摘要只写"做了什么 + 结论"，不回填任务原文，也不回填答复原文——
+        // 内容归 semantic 管，摘要再抄一遍会导致过期后仍能从摘要里读出同一事实。
+        // 任务/答复在这里只用于上面的门槛判断（够不够格写摘要），不进正文。
         String tools = session.tools() == null || session.tools().isEmpty()
                 ? "无"
                 : String.join("/", session.tools());
-        String text = "会话摘要｜任务：" + abbreviate(task, 80)
-                + "｜工具：" + abbreviate(tools, 60)
-                + "｜结果：" + abbreviate(answer, 120);
+        String text = "会话摘要｜工具：" + abbreviate(tools, 60)
+                + "｜步骤：" + session.usedSteps()
+                + "｜结论：完成";
         return new MemoryCandidate(MemoryKind.EPISODIC, text, EPISODIC_CONFIDENCE,
                 props.extract().episodicTtlDays());
     }

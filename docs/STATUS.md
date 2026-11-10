@@ -12,12 +12,12 @@
 | 项 | 状态 |
 |---|---|
 | 项目定位 | **求职作品集**（Agent 开发 / 后端实习），毕业设计只是可能用途之一 |
-| 阶段 | **阶段一（M1~M6）已完成**；**记忆层 v1 已实现、已拆包、功能复核完成**（A1~A5/A7/A8 通过，A6 部分通过：遗忘不彻底） |
+| 阶段 | **阶段一（M1~M6）已完成**；**记忆层 v1 已实现、已拆包、功能复核完成**（A1~A5/A7/A8 通过；**A6 已于 2026-11-10 按方案 b 修复**） |
 | 架构 | Java（Spring AI）规划型 Host `:8090` + Python MCP 服务（工具 `:8001`、Agent `:8002`）+ DashScope `qwen-plus` |
 | 测试 | **70/70**（67 单测 + 3 集成），跑在 `qwen-plus` 上 |
 | 评测 | 30 条任务集：严格 25/30（83.3%）、宽松 27/30（90%）。⚠️ 这是 **Ollama 基线**，换模型后未重跑 |
 | 文档 | 11 份（见第 6 节） |
-| 未提交 | 无 |
+| 未提交 | P0.6 修复（`MemoryExtractor` + 2 个测试 + 文档），待评审后提交 |
 
 ## 2. 现在在做什么
 
@@ -31,8 +31,8 @@
 |---|---|---|
 | **P0** | 记忆层 v1 | **已实现并提交**（`dae6bba`），70/70 测试；规格见 `docs/04-memory-layer-v1.md` |
 | **P0.5** | memory 包拆包 | **已完成**（`4d2226c`）：`shortterm / longterm / model / infra`，70/70 通过，旧包引用为 0；结构见 `docs/04-memory-layer-v1.md` §2.1.1 |
-| **P0.6** | 记忆遗忘不彻底（A6） | 过期 semantic 不再召回，但同会话 episodic 摘要仍带同一事实；修法（推荐 b：episodic 不回填任务原文）见 `docs/04-memory-layer-v1.md` §13，**未实施** |
-| **P0.7** | 过期记忆无主动清理 | `MemoryStore.purgeExpired()` 只在单测里被调用，生产代码从未调用；"过期"目前只是**召回时惰性过滤**（`findActive`），数据仍留在表里。补法（未实施）：**B. `@EnableScheduling` + 每日 `@Scheduled` 调用 `purgeExpired`**，**A. 启动时再清一次**作兜底；不需要加 `status` 字段（是否过期是 `expires_at < now` 的派生值） |
+| **P0.6** | 记忆遗忘不彻底（A6） | **已完成**（2026-11-10，方案 b）：episodic 摘要不再回填任务/答复原文，只留"工具 + 步数 + 结论"；实测过期后不再带出邮箱，`mvn test` 72/72。详见 `docs/04-memory-layer-v1.md` §13「修复记录」 |
+| **P0.7** | 过期记忆无主动清理 | **已决策：逻辑删除**（2026-11-10）。过期 = `expires_at < now`，召回时 `findActive` 过滤即可；不物理删除、不加调度、不加 `status` 列。理由与边界见 `docs/04-memory-layer-v1.md` §13；`purgeExpired()` 保留作手动硬清理入口 |
 | **P1** | RAG 知识库 | 独立 **MCP Server**；与记忆共用同一 embedding 模型/维度 |
 | **P2** | 安全 | 工具白名单、检索内容当"数据"不当指令（spotlighting）、敏感信息过滤 |
 | **P3** | 工程收尾 | MCP 会话重连（重启后熔断不恢复）、CI、前端控制台 |
@@ -97,6 +97,31 @@ python demo/eval/run_eval.py --rescore demo/eval/results/<runId>
 ---
 
 ## 8. 日志（倒序）
+
+### 2026-11-10 · P0.7 决策：逻辑删除，不做物理清理
+
+- **结论**：过期 = `expires_at < now`，召回时 `findActive` 过滤即可，**不删数据、不加 `status` 列、不引入定时任务**。
+- **理由**：功能上等价（过期数据不进 `recalled`，也就不进 prompt）；只有 episodic 有 TTL（90 天），单用户每天至多 1 条，增长极慢；保留数据便于回溯排查；少一个调度线程和一套并发/失败处理。
+- **边界**：`list()` 仍能看到过期项，将来对外暴露记忆管理接口时返回**派生 `expired` 字段**即可；如遇隐私合规诉求，走显式 `forget`（硬删）或手动 `purgeExpired`。
+- **保留**：`purgeExpired()` 作为手动/管理用硬清理入口（已有单测），不接调度。
+- **代码**：无改动（现有 `findActive` 过滤即为最终行为）。
+
+### 2026-11-10 · P0.6 记忆遗忘不彻底（方案 b）
+
+- **做了什么**：`MemoryExtractor.extractEpisodic()` 不再把**任务原文**与**答复原文**写进摘要，episodic 固定为
+  `会话摘要｜工具：<工具/无>｜步骤：<N>｜结论：完成`——只记"做了什么 + 结论"，事实归 semantic 管。
+  连答复也不回填，是因为复核复现里邮箱在任务和答复里各出现一次，只去掉任务仍会漏。
+- **为什么选 b**（规格 §13 的四个选项）：a 会失去会话摘要、c 的级联过期容易误删别的会话、d 治标；
+  b 从源头消除"同一事实存两份"，代价是摘要信息量下降（可接受）。
+- **验证**（独立库 + 独立 trace，qwen-plus）：
+  - 写入"记住：我的邮箱是 `fix-verify@example.com`" → 写入 semantic（原句）+ episodic（摘要，**不含邮箱**）；
+  - 把 semantic `expires_at` 改到 2000 年 → 新会话问"我的邮箱是什么？"：
+    召回只剩 1 条 episodic、答案"我无法访问或查询你的邮箱地址…"，**不再出现邮箱**；
+  - `episodic` 表里 `text like '%fix-verify@example.com%'` → **0 行**。
+  - `mvn test` → **72/72**（70 + `MemoryForgettingTest` + `MemoryExtractorTest` 新用例）。
+- **新增回归测试**：`MemoryForgettingTest`（把复核的三步固化成测试）、`MemoryExtractorTest.episodicDoesNotEchoTaskOrAnswer`。
+- **文档**：`04` §13 追加「修复记录」；`development-protocol.md` 决策记录加第 9 行。
+- **下一步**：P0.7（过期数据主动清理，`@Scheduled` + 启动兜底）仍未做；本轮改动**未提交**，待评审。
 
 ### 2026-11-08 · 记忆层功能复核（A1~A8，独立库实测）
 

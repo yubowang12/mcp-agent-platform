@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -98,6 +99,37 @@ class MemoryExtractorTest {
         assertTrue(episodic.text().startsWith("会话摘要"));
         assertTrue(episodic.text().contains("工具："));
         assertEquals(90, episodic.ttlDays(), "episodic 按配置的保留天数过期");
+    }
+
+    /**
+     * P0.6（方案 b）：会话摘要只写"做了什么 + 结论"，不回填任务/答复原文。
+     *
+     * <p>否则同一事实（这里是一个邮箱）会存两份，过期 semantic 后仍能从 summary 里读出来。
+     */
+    @Test
+    void episodicDoesNotEchoTaskOrAnswer() {
+        String email = "m6-review@example.com";
+        String task = "记住：我的邮箱是 " + email;
+        String answer = "已记录你的邮箱：" + email;
+
+        List<MemoryCandidate> candidates = extractor.extract(
+                new SessionSummary("c-1", "u-1", task, answer, List.of("terminate"), 1, true, false));
+
+        MemoryCandidate semantic = candidates.stream()
+                .filter(c -> c.kind() == MemoryKind.SEMANTIC)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("明确说\"记住\"必须写 semantic"));
+        assertEquals(task, semantic.text(), "semantic 保留用户原话（用户要求记住的就是它）");
+
+        MemoryCandidate episodic = candidates.stream()
+                .filter(c -> c.kind() == MemoryKind.EPISODIC)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("实质性会话应写一条会话摘要"));
+        assertFalse(episodic.text().contains(email), "episodic 不得回填任务原文（P0.6 方案 b）");
+        assertFalse(episodic.text().contains(task), "episodic 不得出现任务原文");
+        assertFalse(episodic.text().contains("已记录"), "episodic 不得回填答复原文");
+        assertTrue(episodic.text().contains("工具：terminate"));
+        assertTrue(episodic.text().contains("结论：完成"));
     }
 
     @Test
