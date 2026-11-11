@@ -3,7 +3,7 @@
 > **这是"换会话 / 换 agent"的入口文档。** 30 秒读完：项目是什么、现在到哪、下一步做什么、怎么跑、材料在哪。
 >
 > 维护约定：每天结束时在「日志」顶部加一条（模板在文末），状态表有变化就一起改。
-> 最近更新：2026-11-07
+> 最近更新：2026-11-11
 
 ---
 
@@ -14,16 +14,16 @@
 | 项目定位 | **求职作品集**（Agent 开发 / 后端实习），毕业设计只是可能用途之一 |
 | 阶段 | **阶段一（M1~M6）已完成**；**记忆层 v1 已实现、已拆包、功能复核完成**（A1~A5/A7/A8 通过；**A6 已于 2026-11-10 按方案 b 修复**） |
 | 架构 | Java（Spring AI）规划型 Host `:8090` + Python MCP 服务（工具 `:8001`、Agent `:8002`）+ DashScope `qwen-plus` |
-| 测试 | **70/70**（67 单测 + 3 集成），跑在 `qwen-plus` 上 |
+| 测试 | **72/72**（69 单测 + 3 集成），跑在 `qwen-plus` 上 |
 | 评测 | 30 条任务集：严格 25/30（83.3%）、宽松 27/30（90%）。⚠️ 这是 **Ollama 基线**，换模型后未重跑 |
-| 文档 | 11 份（见第 6 节） |
-| 未提交 | P0.6 修复（`MemoryExtractor` + 2 个测试 + 文档），待评审后提交 |
+| 文档 | 13 份（见第 6 节） |
+| 未提交 | 无（最新提交 `467c59d`） |
 
 ## 2. 现在在做什么
 
-- **记忆层 v1**：规格已冻结（`docs/04-memory-layer-v1.md`），**已由另一会话实施（工作区未提交）**；
-- 已定：SQLite 存储、Java 内部访问、Host 规则写、**embedding 召回**（与 RAG 共用模型）、注入 system 段、semantic + episodic、`sessionId` 用请求体可选字段（缺省=一次性会话）；
-- **待办**：我按规格 A1~A8 评审实现 → 更新本文件与 `development-protocol.md` 验收记录 → 提交。
+- **RAG v1 方案已定稿**：规格 `docs/06-rag-v1.md` §6 + 执行清单 `docs/07-rag-implementation-brief.md`；
+- 7 个实现选择已锁：拆 6 个 py 文件 / LLM 严格 JSON 分块 / SQLite BLOB + 内存向量 / 自实现 bigram BM25 / 返回全文 + 元数据 / `<<doc>>` 边界 / 错误返回 `isError`；
+- **下一步**：由另一会话按交接单 Step 1→4 实施；完成后我评审 R1~R8。
 
 ## 3. 待办（按优先级）
 
@@ -33,7 +33,7 @@
 | **P0.5** | memory 包拆包 | **已完成**（`4d2226c`）：`shortterm / longterm / model / infra`，70/70 通过，旧包引用为 0；结构见 `docs/04-memory-layer-v1.md` §2.1.1 |
 | **P0.6** | 记忆遗忘不彻底（A6） | **已完成**（2026-11-10，方案 b）：episodic 摘要不再回填任务/答复原文，只留"工具 + 步数 + 结论"；实测过期后不再带出邮箱，`mvn test` 72/72。详见 `docs/04-memory-layer-v1.md` §13「修复记录」 |
 | **P0.7** | 过期记忆无主动清理 | **已决策：逻辑删除**（2026-11-10）。过期 = `expires_at < now`，召回时 `findActive` 过滤即可；不物理删除、不加调度、不加 `status` 列。理由与边界见 `docs/04-memory-layer-v1.md` §13；`purgeExpired()` 保留作手动硬清理入口 |
-| **P1** | RAG 知识库 | **决策已定**（`docs/06-rag-v1.md`）：混合检索 + RRF、模型分块、`rag_search`、8003；**待用户出实施方案** |
+| **P1** | RAG 知识库 | **方案已定稿**（`docs/06-rag-v1.md` §6）：混合检索 + RRF、LLM 分块、`rag_search`、`:8003`；**执行清单在 `docs/07-rag-implementation-brief.md`**，待另一会话实施 |
 | **P2** | 安全 | 工具白名单、检索内容当"数据"不当指令（spotlighting）、敏感信息过滤 |
 | **P3** | 工程收尾 | MCP 会话重连（重启后熔断不恢复）、CI、前端控制台 |
 | **P4** | 数据 | 用 `qwen-plus` 重跑 M6；补 `dual` 组 10 条人工复核 |
@@ -42,7 +42,7 @@
 
 1. **密钥**：只放 `demo/java-mcp-client/src/main/resources/application-local.yml`（gitignored）。**不要**写进 `application.yml`。
 2. **base-url**：Java 侧 `spring.ai.openai.base-url` 到 `.../compatible-mode`（**不带 `/v1`**，Spring AI 自己拼）；Python 侧 `LLM_BASE_URL` 要**带 `/v1`**。
-3. **测试前提**：3 个集成用例需要 8001/8002 在线；测试类已 `@ActiveProfiles("local")`。跑 `mvn test` 前没起服务会启动失败（fail-fast，不是 bug）。
+3. **测试前提**：3 个集成用例需要 8001/8002 在线（RAG 落地后加 8003）；测试类已 `@ActiveProfiles("local")`。跑 `mvn test` 前没起服务会启动失败（fail-fast，不是 bug）。
 4. **评测口径**：严格 = `status=OK` 且工具序列完全匹配；比较时**剔除 `terminate`**；改口径用 `--rescore` 复算，不重跑模型。
 5. **启动期 fail-fast**：8001/8002 任一不在，Java 起不来。这是已知限制，重连排在 P3。
 6. **决策方式**：方案由用户定；提工程选项时先解释术语、给 2~3 个选项和代价（见 `development-protocol.md` 约定 9/10）。
@@ -67,6 +67,10 @@ mvn -s maven-settings.xml -f demo/java-mcp-client/pom.xml test
 # 评测
 python demo/eval/run_eval.py --group dual
 python demo/eval/run_eval.py --rescore demo/eval/results/<runId>
+
+# RAG（实施后；详情见 docs/07）
+& demo\.venv\Scripts\python.exe demo\py-rag-server\ingest.py
+& demo\.venv\Scripts\python.exe demo\py-rag-server\server.py
 ```
 
 ## 6. 文档地图
@@ -79,7 +83,8 @@ python demo/eval/run_eval.py --rescore demo/eval/results/<runId>
 | 背面试题 | `docs/02-interview-and-resume.md` |
 | 逐段读代码 | `docs/03-code-walkthrough.md` |
 | **实施记忆层 v1** | `docs/04-memory-layer-v1.md`（决策、表结构、验收） |
-| **做 RAG 知识库** | `docs/06-rag-v1.md`（主题卡、已定决策、验收 R1~R8、方案要点） |
+| **做 RAG 知识库（实施）** | `docs/07-rag-implementation-brief.md`（执行清单、命令、坑、完成定义） |
+| RAG 规格与决策 | `docs/06-rag-v1.md`（主题卡、已定决策、验收 R1~R8、方案要点） |
 | **拆包目标结构** | `docs/04-memory-layer-v1.md` §2.1.1（执行步骤见对话记录） |
 | 架构决策与取舍 | `docs/architecture.md` |
 | 需求/设计全貌 | `docs/project-design-document.md` |
@@ -98,6 +103,17 @@ python demo/eval/run_eval.py --rescore demo/eval/results/<runId>
 ---
 
 ## 8. 日志（倒序）
+
+### 2026-11-11 · RAG v1 方案定稿 + 实施交接单
+
+- **决策**：7 个实现选择全部锁定——拆 6 个 py 文件、LLM 输出严格 JSON 分块（失败整段成块不重试）、SQLite BLOB + 启动加载内存、自实现字符 bigram BM25、工具返回 chunk 全文 + 元数据、`<<doc>>` 边界包裹、错误 `isError=true`。
+- **产出**：
+  - `docs/06-rag-v1.md` 加 §6「实施方案（v1）」：文件清单、模块职责、分块规则、检索参数、工具契约、Host 接入、4 步顺序、R1~R8 对照、风险；
+  - `docs/07-rag-implementation-brief.md`：给实施会话的交接单（开工提示词、硬约束、精确函数签名、DDL、验证命令、10 条坑、完成定义）；
+  - `.gitignore` 加 `demo/rag/rag.db`（`chunks.json` 入库）。
+- **为什么**：实现交给另一会话，本会话负责规格、评审、沉淀；交接单把"哪一步做什么、做到什么算完"写死，避免实施方重新决策。
+- **环境事实**：`demo/.venv` 是 Python 3.14，已装 `mcp 2.3.0`、`openai 3.35.1`，**numpy 未装**（交接单已标）。
+- **下一步**：实施会话按 Step 1→4 执行，完成后我评审 R1~R8 并填 `docs/07` §11。
 
 ### 2026-11-10 · P0.7 决策：逻辑删除，不做物理清理
 
