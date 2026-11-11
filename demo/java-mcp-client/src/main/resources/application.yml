@@ -64,4 +64,6 @@ spring:
               url: http://127.0.0.1:8001
             agent-worker:
               url: http://127.0.0.1:8002
+            rag-server:      # RAG 知识库服务（demo/py-rag-server，端口 8003）
+              url: http://127.0.0.1:8003
 

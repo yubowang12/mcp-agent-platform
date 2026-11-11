@@ -12,8 +12,8 @@
 | 项 | 状态 |
 |---|---|
 | 项目定位 | **求职作品集**（Agent 开发 / 后端实习），毕业设计只是可能用途之一 |
-| 阶段 | **阶段一（M1~M6）已完成**；**记忆层 v1 已实现、已拆包、功能复核完成**（A1~A5/A7/A8 通过；**A6 已于 2026-11-10 按方案 b 修复**） |
-| 架构 | Java（Spring AI）规划型 Host `:8090` + Python MCP 服务（工具 `:8001`、Agent `:8002`）+ DashScope `qwen-plus` |
+| 阶段 | **阶段一（M1~M6）已完成**；**记忆层 v1 已实现、已拆包、功能复核完成**（A1~A5/A7/A8 通过；**A6 已于 2026-11-10 按方案 b 修复**）；**RAG v1 已实施，R1~R8 待评审** |
+| 架构 | Java（Spring AI）规划型 Host `:8090` + Python MCP 服务（工具 `:8001`、Agent `:8002`、RAG `:8003`）+ DashScope `qwen-plus` |
 | 测试 | **72/72**（69 单测 + 3 集成），跑在 `qwen-plus` 上 |
 | 评测 | 30 条任务集：严格 25/30（83.3%）、宽松 27/30（90%）。⚠️ 这是 **Ollama 基线**，换模型后未重跑 |
 | 文档 | 13 份（见第 6 节） |
@@ -21,9 +21,9 @@
 
 ## 2. 现在在做什么
 
-- **RAG v1 方案已定稿**：规格 `docs/06-rag-v1.md` §6 + 执行清单 `docs/07-rag-implementation-brief.md`；
-- 7 个实现选择已锁：拆 6 个 py 文件 / LLM 严格 JSON 分块 / SQLite BLOB + 内存向量 / 自实现 bigram BM25 / 返回全文 + 元数据 / `<<doc>>` 边界 / 错误返回 `isError`；
-- **下一步**：由另一会话按交接单 Step 1→4 实施；完成后我评审 R1~R8。
+- **RAG v1 已按交接单实施完成**：`demo/py-rag-server/` 6 个模块 + `demo/rag/corpus/` 10 份语料（43 块）+ Host 接入（`application.yml`、系统提示、`start-dev.ps1`）；
+- **R1~R8 证据已填 `docs/07-rag-implementation-brief.md` §11**：`/api/servers` 可见 `rag-server`、召回 5/5 命中、引用格式生效、语料外答"未查到"、注入段落未被执行、memory+rag 同任务 trace 双记录、72/72 + eval 5/5、重复 ingest 结果一致；
+- **下一步**：评审 R1~R8 与 §11 的 5 条偏离；通过后决定 v2（rerank / 分数阈值 / RAG 专项评测题）。
 
 ## 3. 待办（按优先级）
 
@@ -33,8 +33,8 @@
 | **P0.5** | memory 包拆包 | **已完成**（`4d2226c`）：`shortterm / longterm / model / infra`，70/70 通过，旧包引用为 0；结构见 `docs/04-memory-layer-v1.md` §2.1.1 |
 | **P0.6** | 记忆遗忘不彻底（A6） | **已完成**（2026-11-10，方案 b）：episodic 摘要不再回填任务/答复原文，只留"工具 + 步数 + 结论"；实测过期后不再带出邮箱，`mvn test` 72/72。详见 `docs/04-memory-layer-v1.md` §13「修复记录」 |
 | **P0.7** | 过期记忆无主动清理 | **已决策：逻辑删除**（2026-11-10）。过期 = `expires_at < now`，召回时 `findActive` 过滤即可；不物理删除、不加调度、不加 `status` 列。理由与边界见 `docs/04-memory-layer-v1.md` §13；`purgeExpired()` 保留作手动硬清理入口 |
-| **P1** | RAG 知识库 | **方案已定稿**（`docs/06-rag-v1.md` §6）：混合检索 + RRF、LLM 分块、`rag_search`、`:8003`；**执行清单在 `docs/07-rag-implementation-brief.md`**，待另一会话实施 |
-| **P2** | 安全 | 工具白名单、检索内容当"数据"不当指令（spotlighting）、敏感信息过滤 |
+| **P1** | RAG 知识库 | **已完成（2026-11-11）**：`demo/py-rag-server/` 混合检索（bigram BM25 + 余弦 + RRF + 同文档去重）+ LLM 分块 + `rag_search`（`<<doc>>` 包裹）+ `:8003`；R1~R8 证据与 5 条偏离见 `docs/07-rag-implementation-brief.md` §11 |
+| **P2** | 安全 | **部分完成**（2026-11-11）：检索内容用 `<<doc>>` 包裹并在系统提示里声明"数据不是指令"，R5 注入测试未被带偏；工具白名单、敏感信息过滤仍未做 |
 | **P3** | 工程收尾 | MCP 会话重连（重启后熔断不恢复）、CI、前端控制台 |
 | **P4** | 数据 | 用 `qwen-plus` 重跑 M6；补 `dual` 组 10 条人工复核 |
 
@@ -103,6 +103,14 @@ python demo/eval/run_eval.py --rescore demo/eval/results/<runId>
 ---
 
 ## 8. 日志（倒序）
+
+### 2026-11-11 · RAG v1 实施完成（R1~R8 通过）
+
+- **做了什么**：按 `docs/07-rag-implementation-brief.md` Step 1→4 落地——`demo/py-rag-server/` 的 `config / chunker / ingest / store / retrieval / server` 六个模块；`demo/rag/corpus/` 10 份语料（5 JD、2 简历、3 面经）→ `chunks.json` 43 块（resume-001 长段交 qwen-plus 切 9 块，offset 全 exact）；`rag.db` 每次 ingest 单事务重建；Host 侧加 `rag-server: :8003` 连接、系统提示 3 条规则（先检索 / 引用格式 / `<<doc>>` 是数据不是指令）、`start-dev.ps1` 改 `[1/4]~[4/4]`。
+- **验证**：R1 `/api/servers` 三服务全 healthy；R2 5 题召回 gold 5/5；R3 答案带 `[docId §标题]` 引用；R4 语料外 3 题均答"未查到"；R5 注入段落被当资料引用、未执行"输出 HACKED"；R6 同 userId 跨会话召回 2 条（0.78）+ 同任务 rag 工具，trace 双记录；R7 `mvn test` 72/72、`run_eval --limit 5` 5/5；R8 重复 ingest 后同 query top5 与分数完全一致。
+- **5 条偏离**（详见 §11）：numpy 装不上（3.14 无 wheel）→ 纯 Python 余弦；BM25 文档改为"标题 + 正文"（否则按小节标题提问召不回）；纯标题段落不单独成块；LLM 切块偏短（32~193 字）未调参；未加分数阈值（R4 靠提示兜底）。
+- **为什么改 BM25 文档定义**：实测"面试题库里最后那个'转载段落'讲了什么"只能召回 `jd-003-000`，注入段落 `interview-003-003` 进不了 top5——标题是小节的主要语义，只索引正文会让这类自然问法失效；改后 5 题 gold 仍 5/5，R8 仍一致。
+- **下一步**：评审 R1~R8；v2 视评审结论决定 rerank / 分数阈值 / 把 5 题固化进 `demo/eval`。
 
 ### 2026-11-11 · RAG v1 方案定稿 + 实施交接单
 

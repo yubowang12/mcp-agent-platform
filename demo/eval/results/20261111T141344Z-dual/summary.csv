@@ -1,0 +1,6 @@
+﻿id,category,status,strict,lenient,answered,steps,tools,expected,controlActions,latencyMs,errorCode,modes,answerPreview
+s1,single,OK,True,True,True,1,demotools_get_time,demotools_get_time,,2034,,,现在是 2026 年 11 月 11 日 22:13:45。
+s2,single,OK,True,True,True,1,demotools_add,demotools_add,,2111,,,12.5 加 7.5 等于 20.0。
+s3,single,OK,True,True,True,1,demotools_subtract,demotools_subtract,,2099,,,100 减 37 等于 63。
+s4,single,OK,True,True,True,1,agentworker_summarize,agentworker_summarize,,5239,,,MCP 是标准化 AI 与工具连接的开放协议；能力分工具、资源、提示三类；Host 协调，Client 连接，Server 暴露能力。
+s5,single,OK,True,True,True,1,agentworker_translate,agentworker_translate,,2583,,,The weather is nice today—let’s go for a walk in the park.

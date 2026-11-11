@@ -1,4 +1,4 @@
-# 一键启动开发环境：从 application-local.yml 取 Key → 注入环境变量 → 起 8001 / 8002 / 8090
+# 一键启动开发环境：从 application-local.yml 取 Key → 注入环境变量 → 起 8001 / 8002 / 8003 / 8090
 #
 # 用法：
 #   1) 把 Key 填进 demo/java-mcp-client/src/main/resources/application-local.yml（已 gitignore）
@@ -9,7 +9,7 @@
 #   - Java 用 local profile 读该文件；Python 执行器自己也会读同一个文件
 #     （agent.py 取 Key：LLM_API_KEY → DASHSCOPE_API_KEY → application-local.yml）
 #   - 脚本仍会把 Key 导出成 DASHSCOPE_API_KEY，作为显式兜底，避免路径变化时取不到
-#   - Ctrl+C 结束 Java；两个 Python 服务是独立进程，需要时用任务管理器结束
+#   - Ctrl+C 结束 Java；三个 Python 服务是独立进程，需要时用任务管理器结束
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -35,13 +35,19 @@ $env:SPRING_PROFILES_ACTIVE = 'local'
 $python = Join-Path $repoRoot 'demo\.venv\Scripts\python.exe'
 if (-not (Test-Path $python)) { throw "找不到虚拟环境：$python" }
 
-Write-Host '[1/3] 启动 demo-tools (8001) ...'
+Write-Host '[1/4] 启动 demo-tools (8001) ...'
 Start-Process -FilePath $python -ArgumentList 'demo\py-mcp-server\server.py' -WorkingDirectory $repoRoot
 
-Write-Host '[2/3] 启动 agent-worker (8002) ...'
+Write-Host '[2/4] 启动 agent-worker (8002) ...'
 Start-Process -FilePath $python -ArgumentList 'demo\py-agent\agent.py' -WorkingDirectory $repoRoot
 
 Start-Sleep -Seconds 3
 
-Write-Host '[3/3] 启动 Java 编排层 (8090，local profile) ...'
+Write-Host '[3/4] 启动 rag-server (8003) ...'
+Start-Process -FilePath $python -ArgumentList 'demo\py-rag-server\server.py' -WorkingDirectory $repoRoot
+
+Start-Sleep -Seconds 3
+
+Write-Host '[4/4] 启动 Java 编排层 (8090，local profile) ...'
 mvn -s maven-settings.xml -f demo/java-mcp-client/pom.xml spring-boot:run
+
