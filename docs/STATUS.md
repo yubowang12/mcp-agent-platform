@@ -33,7 +33,7 @@
 | **P0.5** | memory 包拆包 | **已完成**（`4d2226c`）：`shortterm / longterm / model / infra`，70/70 通过，旧包引用为 0；结构见 `docs/04-memory-layer-v1.md` §2.1.1 |
 | **P0.6** | 记忆遗忘不彻底（A6） | **已完成**（2026-11-10，方案 b）：episodic 摘要不再回填任务/答复原文，只留"工具 + 步数 + 结论"；实测过期后不再带出邮箱，`mvn test` 72/72。详见 `docs/04-memory-layer-v1.md` §13「修复记录」 |
 | **P0.7** | 过期记忆无主动清理 | **已决策：逻辑删除**（2026-11-10）。过期 = `expires_at < now`，召回时 `findActive` 过滤即可；不物理删除、不加调度、不加 `status` 列。理由与边界见 `docs/04-memory-layer-v1.md` §13；`purgeExpired()` 保留作手动硬清理入口 |
-| **P1** | RAG 知识库 | 独立 **MCP Server**；与记忆共用同一 embedding 模型/维度 |
+| **P1** | RAG 知识库 | **决策已定**（`docs/06-rag-v1.md`）：混合检索 + RRF、模型分块、`rag_search`、8003；**待用户出实施方案** |
 | **P2** | 安全 | 工具白名单、检索内容当"数据"不当指令（spotlighting）、敏感信息过滤 |
 | **P3** | 工程收尾 | MCP 会话重连（重启后熔断不恢复）、CI、前端控制台 |
 | **P4** | 数据 | 用 `qwen-plus` 重跑 M6；补 `dual` 组 10 条人工复核 |
@@ -79,6 +79,7 @@ python demo/eval/run_eval.py --rescore demo/eval/results/<runId>
 | 背面试题 | `docs/02-interview-and-resume.md` |
 | 逐段读代码 | `docs/03-code-walkthrough.md` |
 | **实施记忆层 v1** | `docs/04-memory-layer-v1.md`（决策、表结构、验收） |
+| **做 RAG 知识库** | `docs/06-rag-v1.md`（主题卡、已定决策、验收 R1~R8、方案要点） |
 | **拆包目标结构** | `docs/04-memory-layer-v1.md` §2.1.1（执行步骤见对话记录） |
 | 架构决策与取舍 | `docs/architecture.md` |
 | 需求/设计全貌 | `docs/project-design-document.md` |
