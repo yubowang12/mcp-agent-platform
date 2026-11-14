@@ -41,6 +41,9 @@ demo/eval/results/_trace/
 demo/rag/rag.db
 demo/rag/rag.db-journal
 
+# ---- 图表工作区（archify 候选与校验证据） ----
+.archify/
+
 # ---- IDE ----
 .idea/
 .vscode/
@@ -53,5 +56,8 @@ demo/rag/rag.db-journal
 Thumbs.db
 .DS_Store
 desktop.ini
+
+# ---- 本机 agent 约定（个人工作流，不入库） ----
+AGENTS.md
 
 

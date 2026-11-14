@@ -3,7 +3,7 @@
 > **这是"换会话 / 换 agent"的入口文档。** 30 秒读完：项目是什么、现在到哪、下一步做什么、怎么跑、材料在哪。
 >
 > 维护约定：每天结束时在「日志」顶部加一条（模板在文末），状态表有变化就一起改。
-> 最近更新：2026-11-11
+> 最近更新：2026-11-14
 
 ---
 
@@ -12,7 +12,7 @@
 | 项 | 状态 |
 |---|---|
 | 项目定位 | **求职作品集**（Agent 开发 / 后端实习），毕业设计只是可能用途之一 |
-| 阶段 | **阶段一（M1~M6）已完成**；**记忆层 v1 已实现、已拆包、功能复核完成**（A1~A5/A7/A8 通过；**A6 已于 2026-11-10 按方案 b 修复**）；**RAG v1 已实施，R1~R8 待评审** |
+| 阶段 | **阶段一（M1~M6）已完成**；**记忆层 v1 已实现、已拆包、功能复核完成**（A1~A5/A7/A8 通过；**A6 已于 2026-11-10 按方案 b 修复**）；**RAG v1 已实施，R1~R8 待评审**；**2026-11-14 完成可靠性评审，v1.1 收口待实施（§3.1）** |
 | 架构 | Java（Spring AI）规划型 Host `:8090` + Python MCP 服务（工具 `:8001`、Agent `:8002`、RAG `:8003`）+ DashScope `qwen-plus` |
 | 测试 | **72/72**（69 单测 + 3 集成），跑在 `qwen-plus` 上 |
 | 评测 | 30 条任务集：严格 25/30（83.3%）、宽松 27/30（90%）。⚠️ 这是 **Ollama 基线**，换模型后未重跑 |
@@ -21,9 +21,9 @@
 
 ## 2. 现在在做什么
 
-- **RAG v1 已按交接单实施完成**：`demo/py-rag-server/` 6 个模块 + `demo/rag/corpus/` 10 份语料（43 块）+ Host 接入（`application.yml`、系统提示、`start-dev.ps1`）；
-- **R1~R8 证据已填 `docs/07-rag-implementation-brief.md` §11**：`/api/servers` 可见 `rag-server`、召回 5/5 命中、引用格式生效、语料外答"未查到"、注入段落未被执行、memory+rag 同任务 trace 双记录、72/72 + eval 5/5、重复 ingest 结果一致；
-- **下一步**：评审 R1~R8 与 §11 的 5 条偏离；通过后决定 v2（rerank / 分数阈值 / RAG 专项评测题）。
+- **2026-11-14 完成 v1.1 可靠性评审**（外部评审 + 本会话逐条复核）：采纳 8 条、修正 3 条、降级 2 条；结论是「骨架正确、五条基础链路（超时 / 身份 / 目录 / Trace / 证据）未收口」，**不再加能力**；
+- **修改方案已拆成任务包**：见 §3.1（W1~W7，含问题、改法、文件、验收命令、风险），按 W1→W2→W3→W4→W5→W6/W7 交实施会话；
+- **下一步**：先做 W1+W2（总时限 + 有界线程池），再 W3/W4；W5 用 `qwen-plus` 重跑 30 条并补人工抽检。RAG v2（rerank / 阈值）等 W5 的 RAG 专项数据出来再定。
 
 ## 3. 待办（按优先级）
 
@@ -35,8 +35,104 @@
 | **P0.7** | 过期记忆无主动清理 | **已决策：逻辑删除**（2026-11-10）。过期 = `expires_at < now`，召回时 `findActive` 过滤即可；不物理删除、不加调度、不加 `status` 列。理由与边界见 `docs/04-memory-layer-v1.md` §13；`purgeExpired()` 保留作手动硬清理入口 |
 | **P1** | RAG 知识库 | **已完成（2026-11-11）**：`demo/py-rag-server/` 混合检索（bigram BM25 + 余弦 + RRF + 同文档去重）+ LLM 分块 + `rag_search`（`<<doc>>` 包裹）+ `:8003`；R1~R8 证据与 5 条偏离见 `docs/07-rag-implementation-brief.md` §11 |
 | **P2** | 安全 | **部分完成**（2026-11-11）：检索内容用 `<<doc>>` 包裹并在系统提示里声明"数据不是指令"，R5 注入测试未被带偏；工具白名单、敏感信息过滤仍未做 |
-| **P3** | 工程收尾 | MCP 会话重连（重启后熔断不恢复）、CI、前端控制台 |
-| **P4** | 数据 | 用 `qwen-plus` 重跑 M6；补 `dual` 组 10 条人工复核 |
+| **P3** | 工程收尾 | MCP 会话重连（重启后熔断不恢复）、CI、前端控制台；**v1.1 不做**，见 §3.1.4 |
+| **P4** | 数据 | 用 `qwen-plus` 重跑 M6 + 补 `dual` 组人工复核 → **并入 §3.1 W5**（2026-11-14） |
+
+## 3.1 v1.1 可靠性收口（2026-11-14 评审后）
+
+> 评审基线：`docs/architecture.md` + memory/RAG 扩展；方式：**静态代码 + 文档对照**，未起服务、未重跑测试。
+> 本会话逐条复核后：**采纳 8 条、修正 3 条、降级 2 条**。目标不是加能力，是把「超时、身份、目录、Trace、证据」五条基础链路做扎实。
+
+### 3.1.1 判定表（复核后）
+
+| 评审项 | 判定 | 复核依据 |
+|---|---|---|
+| 总 deadline 不是硬约束 | ✅ 采纳 **P0** | `TaskOrchestrator.java:193-197` 只在循环头检查；`callLlm` 固定 60s（`:335`）、工具固定 45s（`TimeoutToolCallback.java:59`）、空答重试再 60s，最坏超 300s 约 105~165s |
+| 超时保护用无界线程池 | ✅ 采纳 **P0** | `TaskOrchestrator.java:61`、`TimeoutToolCallback.java:31` 都是 `newCachedThreadPool`；`future.cancel(true)` 不保证中断阻塞中的 MCP HTTP 调用 → 慢服务 + 并发会堆线程/连接 |
+| Trace 把未知调用记成成功 | ✅ 采纳 P1 | `TaskOrchestrator.java:350-359` 找不到记录时 `orElseGet(... ok=true, 0ms)`；`terminate` 是本地工具、未包超时/熔断，需与"未知工具"区分 |
+| `tokenUsage/retryCount` 恒为空 | ✅ 采纳（非 bug） | `TaskTrace.java` 的 javadoc 明说 M2 起恒为 null；作为实验数据必须补，否则成本/重试无从分析 |
+| RAG 索引不随 ingest 热更新 | ✅ 采纳 P1 | `server.py:57-65` 只在 `INDEX is None` 时补加载；重构库后仍查旧矩阵，需重启 |
+| 防注入只是提示词缓解 | ✅ 采纳 P1 | `server.py:51-54` 的 `_wrap` 未转义正文里的 `<<doc` / `<</doc>>`；`docs/06` 要求的输出侧引用校验未实现 |
+| 评测只证明链路能跑 | ✅ 采纳 P1 | `run_eval.py:117-138` 严格分 = `status=OK` + 工具序列 + 答案非空，不判内容；`:365` 串行；30 条结果仍是 Ollama 基线（`RESULTS.md:3`） |
+| Catalog 生命周期未实现 | ⚠️ 修正 P2 | 框架层 `SyncMcpToolCallbackProvider` 已有 `cachedToolCallbacks` 字段并实现 `ApplicationListener<McpToolsChangedEvent>`（`invalidateCache()`），**缓存与失效是现成的**；问题在 `CatalogController.java:31` 自己 `new` 了一个 provider，不是 bean，收不到事件。改为注入自动装配的 `mcpToolCallbacks` 即可，不必自写缓存 |
+| 身份用 `serverInfo.name()` 违反约束 | ⚠️ 修正 P2 | `javap` 确认 `McpConnectionInfo` 只有 `clientCapabilities/clientInfo/initializeResult`，**拿不到 connections key**；Spring AI 自带 `DefaultMcpToolNamePrefixGenerator` 也只用 clientInfo + serverInfo。换 key 需自建 client，或按 `NamedClientMcpTransport` 顺序配对（脆弱）。v1.1 先做**唯一性校验 + 失败即停**，完整映射留 R1 spike |
+| 8003 不在线仍诱导调用 | ⚠️ 降级 P3 | 启动 fail-fast 保证应用起来时 8003 在线；运行中掉线是"工具在、调用失败"，已按 `TOOL_ERROR` 降级。硬编码提示词仍是坏味道，v2 从 catalog 动态生成 |
+| 规划 LLM 无规则兜底 | ✅ 采纳 P2 | `architecture.md:193` 写了"回退到规则编排"，代码未实现；v1.1 可选补，或把文档标成 v2 |
+| 状态机 / 并行与文档不一致 | ⚠️ 降级（不做） | 实际是隐式 ReAct；`architecture.md:313` 已注明"缓存/失效留到 R1"。v1.1 只把文档改成描述当前实现，不为了"像状态机"重写循环 |
+
+### 3.1.2 任务包（按实施顺序）
+
+**W1 任务总时限硬约束（P0）**
+- 问题：deadline 只在 while 条件判断，单轮 LLM + 工具 + 空答重试都可能越过 300s。
+- 改法：
+  1. `callLlm(prompt, maxSteps, memorySection, long remainingMs)`：`future.get(Math.max(1, Math.min(llmTimeout, remainingMs)), MILLISECONDS)`；`remaining ≤ 0` 直接抛 `TaskDeadlineExceededException`。
+  2. `TimeoutToolCallback` 增加 `LongSupplier remainingMs`（构造注入），每次 `call()` 取 `min(toolTimeout, remaining)`；`remaining ≤ 0` 直接返回"任务总时长已用尽"并记 `TASK_TIMEOUT`。
+  3. 新增 errorCode `TASK_TIMEOUT`（总时限）与现有 `TOOL_TIMEOUT`（单工具）区分；捕获后 `status=TIMEOUT`。
+  4. deadline 与 `maxSteps` 同时命中时，deadline 优先。
+- 验收：
+  - 新增 `TaskDeadlineTest`：`task-timeout-seconds=2` + 一个 `CountDownLatch` 阻塞 3s 的测试工具 → 响应 ≤ 3s、`status=TIMEOUT`、trace `errorCode=TASK_TIMEOUT`；
+  - `TaskDegradationTest`、`TimeoutToolCallbackTest` 仍过；
+  - `mvn -s maven-settings.xml -f demo/java-mcp-client/pom.xml -Dtest="TaskDeadlineTest,TaskDegradationTest,TimeoutToolCallbackTest" test`。
+- 风险：签名变化波及 `TaskOrchestratorTest`；测试工具别用 `Thread.sleep` 拖慢单测。
+
+**W2 有界线程池 + 并发闸门（P0）**
+- 问题：两个池无界，`cancel(true)` 拦不住阻塞的 MCP 调用，慢服务叠加并发会堆线程/连接。
+- 改法：
+  1. 两个池改 `ThreadPoolExecutor(core=max=N, 有界队列, AbortPolicy)`，配置：`mcp.planner.llm-pool-size=8`、`llm-queue=32`、`tool-pool-size=16`、`tool-queue=64`；`@PreDestroy` 优雅关闭。
+  2. 拒绝策略：LLM → 抛 `LlmOverloadedException` → `status=ERROR, errorCode=OVERLOAD`；工具 → 返回"系统繁忙"文本 + `TOOL_ERROR`（或新增 `OVERLOAD`）。
+  3. 入口闸门：`TaskController` 用 `Semaphore(max-concurrent-tasks=8)`，`tryAcquire` 失败立即 503 + `Retry-After`（可配 `mcp.planner.max-concurrent-tasks`）。
+  4. Python 侧：`agent.py` / `ingest.py` 的 `OpenAI(...)` 显式 `timeout=60, max_retries=1`（默认 600s 太长）。
+- 验收：
+  - 单测：池满时第 N+1 次调用 ≤100ms 返回"繁忙"，不阻塞；
+  - 并发脚本：20 个并发 `/api/task`，8 个 200、其余 503，线程数不随请求线性增长；
+  - 现有超时/熔断单测全过。
+- 风险：503 会让"无脑并发"的脚本失败（串行 eval 不受影响）；默认并发别压到 1。
+
+**W3 Trace 真实性（P1）**
+- 问题：未知调用默认 `ok=true, 0ms`；`tokenUsage/retryCount` 恒 null。
+- 改法：
+  1. `recordOf` 找不到时返回 `null`；调用处对 `terminate` 显式记 `ok=true`，其余 null → `ok=false, errorCode=UNKNOWN_TOOL`。
+  2. `tokenUsage`：从 `ChatResponse.getMetadata().getUsage()` 取 prompt/completion/total 并累加；拿不到写 null，不要写 0。
+  3. `retryCount`：空答重试次数（0/1）。
+- 验收：新增 `TraceTruthfulnessTest`——① 调用目录外的工具名 → step `ok=false, errorCode=UNKNOWN_TOOL`；② `terminate` → `ok=true, 0ms`；③ 一次空答重试 → `retryCount=1`；④ 正常任务 → `tokenUsage.totalTokens > 0`。
+- 风险：`TraceStep`/`TaskTrace` 是 record，加字段要同步 trace 消费方（`run_eval.py` 只读 `steps[].toolName/status`，兼容）。
+
+**W4 RAG 契约与生命周期（P1）**
+- 4a 索引热更新：每次 `rag_search` 先 `os.stat(config.DB_PATH).st_mtime_ns`，与加载时不同则重载并**原子替换**；重载失败保留旧索引 + warn，返回结果里加 `indexVersion`。
+- 4b 边界转义：`_wrap` 前把正文 `<<doc` → `‹‹doc`、`<</doc>>` → `‹‹/doc››`（或插入零宽字符），保证注入内容不能提前闭合边界；R5 增加一条含 `<</doc>>` 的语料。
+- 4c 引用校验（Host 侧）：收尾时正则 `\[([a-z0-9-]+)\s*§` 提取 docId，与本次 `ragserver_rag_search` 返回的 docId 集合比对；不在集合 → trace `citation_invalid=true`（不删答案，可选把 `status` 降为 `DEGRADED`）。
+- 4d 错误契约：保持 `code: message` 文本（MCP isError 只能文本），在 `docs/06` 补 code 表。
+- 验收：① 新增文档后不重启即可命中；② 注入含 `<</doc>>` 的段落 → 边界仍完整、模型不执行；③ 编造引用 → trace 有 `citation_invalid`；④ `retrieval.py --selftest` 仍 4/4。
+
+**W5 证据重建（P1）**
+- 5a 全量重跑：`python demo/eval/run_eval.py --group dual`（30 条，qwen-plus）+ `--group direct` 对照；`RESULTS.md` 新增 2026-11-14 表（模型、时间、严格/宽松、P50/P95、失败模式），Ollama 表保留并标"历史基线"。
+- 5b 人工抽检：从 30 条抽 10 条（dual 6 + direct 4），按 对 / 部分 / 错 打分并写理由，进 `RESULTS.md` 新表。
+- 5c RAG 专项：`demo/eval/rag_tasks.json` 固化 10 题（5 gold + 3 域外 + 1 注入 + 1 引用），记录 top5 命中与引用合法性。
+- 5d 熔断/超时复现：把"停 8002 → 3 次 DEGRADED → OPEN → CIRCUIT_OPEN 0ms"固化成 `demo/eval/resilience_check.ps1` 或文档步骤。
+- 验收：RESULTS.md 有三张新表；README/STATUS 的 `72/72` 与评测数字同步；每条结论能指到 `results/<runId>/`。
+
+**W6 Catalog 注入 + 文档对齐（P2）**
+- `CatalogController` 改为注入自动装配的 `SyncMcpToolCallbackProvider`（bean `mcpToolCallbacks`），删除自建 provider；`TaskOrchestrator` 同样改注入 provider 的 callbacks，再包超时/熔断（保留 prefix→server 映射）。
+- 效果：`McpToolsChangedEvent` → `invalidateCache()` 自动生效，`/api/catalog` 与模型工具表都能刷新。
+- 文档：`architecture.md` §4.1 标"目标设计（v2）"、`:313` 实现备注更新；§4.7 规则兜底标"未实现（W7）"；§4.3 的"健康度过滤"与实现差异补一句。
+- 验收：`/api/catalog` 与改前一致；手动触发 `McpToolsChangedEvent` 后目录重新 list（日志可证）；相关单测通过。
+
+**W7 规划 LLM 规则兜底（P2，可选）**
+- `callLlm` 抛 `LlmTimeoutException` / 其它异常时，按关键词路由执行一次（含"时间"→`demotools_get_time`，含"加/减/算"→对应工具），结果作为答案并标 `status=DEGRADED, errorCode=PLANNER_FALLBACK`；再不命中 → `ERROR`。
+- 验收：单测 mock `ChatClient` 抛异常 → 走 `get_time` 且 trace 有 `PLANNER_FALLBACK`；正常路径不变。
+
+### 3.1.3 实施纪律
+
+- 一次只做一个包；**W1 与 W2 同区**（`TaskOrchestrator.java` / `TimeoutToolCallback.java`），必须串行。
+- 先写/改测试再改实现；单测用 `-Dtest=`，全量测试需 8001/8002/8003 在线。
+- 不改 `AGENTS.md`、`STATUS.md`、`application-local.yml`、`.gitignore`；不 commit；改完按五项回报（结论 / 证据 / 改动 file:line / 未决 / 用量）。
+- 行为变化（503、新 errorCode、新 trace 字段）先在本节补一行决策，再动代码。
+
+### 3.1.4 不做（v1.1 范围外）
+
+- 并行工具调用、显式状态机（`PLANNING/EXECUTING/OBSERVE`）——文档改为描述当前隐式 ReAct；
+- 向量数据库、RAG rerank / 分数阈值——等 W5 的 RAG 专项数据再定（v2）；
+- MCP 会话重连（R1）、前端控制台——仍在 P3。
 
 ## 4. 关键约束（换人做也别踩）
 
@@ -103,6 +199,13 @@ python demo/eval/run_eval.py --rescore demo/eval/results/<runId>
 ---
 
 ## 8. 日志（倒序）
+
+### 2026-11-14 · v1.1 可靠性评审与收口计划
+
+- **评审**：外部评审给"教学 7.5/10、生产 5/10"，核心结论是骨架正确、五条基础链路未收口；本会话逐条对代码复核，**采纳 8 条、修正 3 条、降级 2 条**（判定表见 §3.1.1）。
+- **修正三条**：① Catalog 缓存/失效框架已内置（`SyncMcpToolCallbackProvider` 有 `cachedToolCallbacks` + 监听 `McpToolsChangedEvent`），问题只是 Controller 自建 provider，改注入 bean 即可；② `McpConnectionInfo` 拿不到 connections key（`javap` 确认），"换 key"不是一行事，v1.1 先做唯一性 fail-fast；③ 8003 因启动 fail-fast 不会"缺席"，硬编码提示词降为 P3。
+- **产出**：§3.1 的 W1~W7（问题 / 改法 / 文件 / 验收命令 / 风险）+ 实施纪律 + 不做清单，按 W1→W2→W3→W4→W5→W6/W7 交实施会话。
+- **证据边界**：本轮是静态审查，没起服务、没重跑 `mvn test`；72/72 与 25/30 仍是历史记录，W5 重跑后回填。
 
 ### 2026-11-11 · RAG v1 实施完成（R1~R8 通过）
 

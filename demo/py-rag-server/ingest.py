@@ -86,7 +86,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"reuse {json_path}")
 
     if data is None:
+        # 分块后产物
         data = chunker.build_chunks()
+        # 写入 chunks.json
         chunker.write_chunks(data, json_path)
         avg_len = (sum(len(c["text"]) for c in data["chunks"]) / len(data["chunks"])
                    if data["chunks"] else 0)
@@ -110,9 +112,10 @@ def main(argv: list[str] | None = None) -> int:
         chunk["embedding"] = store.encode_vector(vector)
         chunk["dim"] = len(vector)
         embedded += 1
-
+    # 初始化数据库表
     db = store.init_db(Path(args.db))
     try:
+        # 重建数据库表 (数据入库)
         store.rebuild(db, data["docs"], chunks)
     finally:
         db.close()

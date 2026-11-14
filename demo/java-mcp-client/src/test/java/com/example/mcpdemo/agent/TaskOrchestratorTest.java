@@ -4,6 +4,7 @@ import com.example.mcpdemo.agent.model.TaskStatus;
 import com.example.mcpdemo.agent.model.TaskTrace;
 import com.example.mcpdemo.agent.model.TraceStep;
 import jakarta.annotation.Resource;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -65,5 +66,20 @@ class TaskOrchestratorTest {
 
         assertNotNull(trace);
         assertTrue(trace.usedSteps() < 2, "单步任务应至多调用一次工具");
+    }
+
+    /**
+     * 手工冒烟：验证 RAG 工具确实被调用。默认禁用，避免全量测试依赖 8003 与真实模型配额。
+     * 要跑时：起 8001/8002/8003 → 去掉 {@code @Disabled} 或用 IDE 单跑。
+     */
+    @Disabled("手工冒烟：需 8001/8002/8003 在线 + DashScope Key")
+    @Test
+    void run4() {
+        TaskContext tc = new TaskContext("004", "根据知识库，Agent 开发实习岗位需要哪些技能？请引用原文出处。", 10);
+        TaskTrace trace = orchestrator.run(tc);
+        System.out.println(trace);
+
+        assertNotNull(trace);
+        assertTrue(trace.usedSteps() >= 1, "需要至少用一次工具(RAG)");
     }
 }

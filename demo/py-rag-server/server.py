@@ -26,7 +26,7 @@ if INDEX is None:
 else:
     log.info("索引已加载：%d 个块", len(INDEX.chunks))
 
-RAG_SEARCH_DESCRIPTION = """只读检索企业知识库，返回与 query 最相关的资料片段（默认 5 条）。
+RAG_SEARCH_DESCRIPTION = """只读检索知识库，返回与 query 最相关的资料片段（默认 5 条）; 当用户提问有关岗位、简历、面试题、技术知识的问题时，调用本工具。
 
 输入：
 - query：自然语言问题或关键词，例如「Agent 实习岗位要求」「MySQL 索引失效场景」
