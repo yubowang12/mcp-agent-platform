@@ -191,6 +191,8 @@ public class TaskOrchestrator {
                 .build();
 
         Instant deadline = ctx.getStartedAt().plus(Duration.ofSeconds(props.taskTimeoutSeconds()));
+        // W1：把硬截止时间放进 ThreadLocal，供 TimeoutToolCallback 收缩单次工具预算
+        TaskDeadline.set(deadline);
         try {
             while (ctx.getState() == AgentState.RUNNING
                     && ctx.getSteps().size() < ctx.getMaxSteps()
@@ -303,8 +305,15 @@ public class TaskOrchestrator {
                     ctx.setStatus(TaskStatus.MAX_STEPS);
                 } else {
                     ctx.setStatus(TaskStatus.TIMEOUT);
+                    ctx.setErrorCode("TASK_TIMEOUT");
+                    ctx.setErrorMessage("任务总时限 " + props.taskTimeoutSeconds() + "s 已用尽");
                 }
             }
+        } catch (TaskTimeoutException e) {
+            ctx.setState(AgentState.ERROR);
+            ctx.setStatus(TaskStatus.TIMEOUT);
+            ctx.setErrorCode("TASK_TIMEOUT");
+            ctx.setErrorMessage("任务总时限 " + props.taskTimeoutSeconds() + "s 已用尽");
         } catch (LlmTimeoutException e) {
             ctx.setState(AgentState.ERROR);
             ctx.setStatus(TaskStatus.TIMEOUT);
@@ -315,6 +324,9 @@ public class TaskOrchestrator {
             ctx.setStatus(TaskStatus.ERROR);
             ctx.setErrorCode("ORCHESTRATION_ERROR");
             ctx.setErrorMessage(e.getMessage());
+        } finally {
+            // ThreadLocal 必须清理：Web 线程池会复用线程，脏 deadline 会污染下一个请求
+            TaskDeadline.clear();
         }
 
         fillFallbackAnswer(ctx);
@@ -326,17 +338,29 @@ public class TaskOrchestrator {
     }
 
     /**
-     * 带超时的 LLM 调用：超时则取消任务并抛 {@link LlmTimeoutException}（由 run 统一处理）。
+     * 带超时的 LLM 调用：超时则取消任务并抛异常（由 run 统一处理）。
+     *
+     * <p>W1：取 min(单次 LLM 超时, 任务剩余时间)。剩余时间先耗尽 → {@link TaskTimeoutException}，
+     * 否则才是单次调用超时的 {@link LlmTimeoutException}——两者在 trace 里对应不同 errorCode。
      */
     private ChatResponse callLlm(Prompt prompt, int maxSteps, String memorySection) throws Exception {
+        long budgetMillis = TaskDeadline.remainingMillis();
+        if (budgetMillis <= 0) {
+            throw new TaskTimeoutException();
+        }
+        long effectiveMillis = Math.min(props.llmTimeoutSeconds() * 1000L, budgetMillis);
         Future<ChatResponse> future = LLM_POOL.submit(() ->
                 chatClient.prompt(prompt).system(systemPrompt(maxSteps, memorySection)).call().chatResponse());
         try {
-            return future.get(props.llmTimeoutSeconds(), TimeUnit.SECONDS);
+            return future.get(effectiveMillis, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             future.cancel(true);
-            throw new LlmTimeoutException();
+            throw TaskDeadline.isExpired() ? new TaskTimeoutException() : new LlmTimeoutException();
         }
+    }
+
+    /** 任务总时限（{@code task-timeout-seconds}）用尽。 */
+    private static final class TaskTimeoutException extends RuntimeException {
     }
 
     /** 规划 LLM 调用超时。 */

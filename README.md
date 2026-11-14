@@ -17,7 +17,7 @@
 | **手写三态熔断 + 快速失败**：连续失败 3 次打开，冷却后半开探测；熔断期间调用 0ms 拒绝，不干等 45s 超时 | 停 8001 实测：`DEGRADED/TOOL_ERROR` → `OPEN` → `CIRCUIT_OPEN(0ms)` |
 | **结构化 trace 与降级口径**：每请求一条 JSONL，`status`/`errorCode`/`degradedSteps` 可归因 | `demo/logs/trace/*.jsonl`、`TaskTrace` |
 | **可复现评测**：30 条任务集 + 批跑脚本 + 严格/宽松成功率 + P50/P95 + 失败模式分布 | `demo/eval/RESULTS.md`（B-dual 严格 25/30，**Ollama 基线**，qwen-plus 待重跑）；`--rescore` 支持口径复算 |
-| **工程完整度**：72 个测试（69 单测 + 3 集成）、配置外置、密钥不入库、一条命令起全套服务 | `mvn test` 72/72；`demo/start-dev.ps1` |
+| **工程完整度**：76 个测试（73 单测 + 3 集成）、配置外置、密钥不入库、一条命令起全套服务 | `mvn test` 76/76；`demo/start-dev.ps1` |
 
 ## 当前进度
 
@@ -56,7 +56,7 @@ my_work/
 │   │   │   ├── resilience/            # 熔断（M5）：CircuitBreaker / Registry / Properties
 │   │   │   ├── config/                # McpToolPrefixConfig / PlannerProperties
 │   │   │   └── web/                   # Catalog/Planner/Task 接口
-│   │   └── src/test/java/com/example/mcpdemo/  # 单测 21 + 集成 3
+│   │   └── src/test/java/com/example/mcpdemo/  # 单测 73 + 集成 3
 │   ├── eval/                          # M6 评测（tasks.json / run_eval.py / results / RESULTS.md）
 │   └── .venv/                         # Python 虚拟环境（mcp 2.3.0 + openai）
 ├── docs/
@@ -118,7 +118,7 @@ trace 落盘位置：`demo/logs/trace/yyyy-MM-dd.jsonl`（JSONL，一行一条�
 
 ```powershell
 # 纯单元测试（不依赖 8001/8002、不调用模型 API）
-mvn -s maven-settings.xml -f demo/java-mcp-client/pom.xml -Dtest="CircuitBreakerTest,CircuitBreakingToolCallbackTest,TimeoutToolCallbackTest,TaskDegradationTest,NoToolsAvailableTest" test
+mvn -s maven-settings.xml -f demo/java-mcp-client/pom.xml -Dtest="CircuitBreakerTest,CircuitBreakingToolCallbackTest,TimeoutToolCallbackTest,TaskDeadlineTest,TaskDegradationTest,NoToolsAvailableTest" test
 
 # 全量（3 个集成用例需要先启动 8001/8002，并配好 DashScope Key / local profile）
 mvn -s maven-settings.xml -f demo/java-mcp-client/pom.xml test
@@ -126,6 +126,8 @@ mvn -s maven-settings.xml -f demo/java-mcp-client/pom.xml test
 
 2026-11-11 记录：全量 **72/72** 通过（69 个纯单测 + 3 个集成用例），trace 见 `demo/logs/trace/`。其中：
 `CircuitBreakerTest`（8）验状态机；`CircuitBreakingToolCallbackTest`（5）验熔断包装器；`TimeoutToolCallbackTest`（3）验失败判定；`TaskDegradationTest`（4）验 `DEGRADED` 规则；`NoToolsAvailableTest`（1）无工具场景；记忆层 48 个（短期仓储/抽取/召回/向量/提示词/降级/遗忘）；`TaskOrchestratorTest`（3）集成回归。
+
+2026-11-14（v1.1 W1）：新增 `TaskDeadlineTest`（4）验总时限预算，测试总数 76（73 单测 + 3 集成）；本轮只跑了相关的 16 个用例（全过），全量待 8001/8002/8003 起来后重跑。
 
 ## 文档索引
 

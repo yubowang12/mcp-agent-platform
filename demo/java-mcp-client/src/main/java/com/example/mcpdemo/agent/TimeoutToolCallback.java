@@ -53,10 +53,19 @@ public class TimeoutToolCallback implements ToolCallback {
     public String call(String toolInput) {
         String toolName = delegate.getToolDefinition().name();
         long start = System.nanoTime();
+
+        // W1：单次工具最多只能等到任务 deadline；剩余时间不足时直接失败，
+        // 不再提交任务（否则会白跑一个注定被丢弃的调用）。
+        long budgetMillis = Math.min(timeoutSeconds * 1000, TaskDeadline.remainingMillis());
+        if (budgetMillis <= 0) {
+            record(toolName, start, false, ToolCallRecorder.TOOL_TIMEOUT);
+            return "工具调用超时（任务总时限已用尽），未执行。";
+        }
+
         Future<String> future = null;
         try {
             future = POOL.submit(() -> delegate.call(toolInput));
-            String result = future.get(timeoutSeconds, TimeUnit.SECONDS);
+            String result = future.get(budgetMillis, TimeUnit.MILLISECONDS);
             record(toolName, start, true, null);
             return result;
         } catch (TimeoutException e) {
@@ -64,7 +73,7 @@ public class TimeoutToolCallback implements ToolCallback {
                 future.cancel(true);
             }
             record(toolName, start, false, ToolCallRecorder.TOOL_TIMEOUT);
-            return "工具调用超时（" + timeoutSeconds + "s），未返回结果。";
+            return "工具调用超时（" + formatBudget(budgetMillis) + "），未返回结果。";
         } catch (Exception e) {
             if (future != null) {
                 future.cancel(true);
@@ -75,6 +84,11 @@ public class TimeoutToolCallback implements ToolCallback {
             record(toolName, start, false, ToolCallRecorder.TOOL_ERROR);
             return "工具调用失败：" + rootMessage(e);
         }
+    }
+
+    /** 预算展示：≥1s 用秒（保留一位小数），否则用毫秒。 */
+    private static String formatBudget(long budgetMillis) {
+        return budgetMillis >= 1000 ? String.format("%.1fs", budgetMillis / 1000.0) : budgetMillis + "ms";
     }
 
     private static void record(String toolName, long start, boolean ok, String errorCode) {

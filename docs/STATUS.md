@@ -14,7 +14,7 @@
 | 项目定位 | **求职作品集**（Agent 开发 / 后端实习），毕业设计只是可能用途之一 |
 | 阶段 | **阶段一（M1~M6）已完成**；**记忆层 v1 已实现、已拆包、功能复核完成**（A1~A5/A7/A8 通过；**A6 已于 2026-11-10 按方案 b 修复**）；**RAG v1 已实施，R1~R8 待评审**；**2026-11-14 完成可靠性评审，v1.1 收口待实施（§3.1）** |
 | 架构 | Java（Spring AI）规划型 Host `:8090` + Python MCP 服务（工具 `:8001`、Agent `:8002`、RAG `:8003`）+ DashScope `qwen-plus` |
-| 测试 | **72/72**（69 单测 + 3 集成），跑在 `qwen-plus` 上 |
+| 测试 | **76/76**（73 单测 + 3 集成），跑在 `qwen-plus` 上 |
 | 评测 | 30 条任务集：严格 25/30（83.3%）、宽松 27/30（90%）。⚠️ 这是 **Ollama 基线**，换模型后未重跑 |
 | 文档 | 13 份（见第 6 节） |
 | 未提交 | 无（最新提交 `5d6d62c`，RAG v1） |
@@ -62,18 +62,17 @@
 
 ### 3.1.2 任务包（按实施顺序）
 
-**W1 任务总时限硬约束（P0）**
+**W1 任务总时限硬约束（P0）— ✅ 已完成（2026-11-14）**
 - 问题：deadline 只在 while 条件判断，单轮 LLM + 工具 + 空答重试都可能越过 300s。
-- 改法：
-  1. `callLlm(prompt, maxSteps, memorySection, long remainingMs)`：`future.get(Math.max(1, Math.min(llmTimeout, remainingMs)), MILLISECONDS)`；`remaining ≤ 0` 直接抛 `TaskDeadlineExceededException`。
-  2. `TimeoutToolCallback` 增加 `LongSupplier remainingMs`（构造注入），每次 `call()` 取 `min(toolTimeout, remaining)`；`remaining ≤ 0` 直接返回"任务总时长已用尽"并记 `TASK_TIMEOUT`。
-  3. 新增 errorCode `TASK_TIMEOUT`（总时限）与现有 `TOOL_TIMEOUT`（单工具）区分；捕获后 `status=TIMEOUT`。
-  4. deadline 与 `maxSteps` 同时命中时，deadline 优先。
-- 验收：
-  - 新增 `TaskDeadlineTest`：`task-timeout-seconds=2` + 一个 `CountDownLatch` 阻塞 3s 的测试工具 → 响应 ≤ 3s、`status=TIMEOUT`、trace `errorCode=TASK_TIMEOUT`；
-  - `TaskDegradationTest`、`TimeoutToolCallbackTest` 仍过；
-  - `mvn -s maven-settings.xml -f demo/java-mcp-client/pom.xml -Dtest="TaskDeadlineTest,TaskDegradationTest,TimeoutToolCallbackTest" test`。
-- 风险：签名变化波及 `TaskOrchestratorTest`；测试工具别用 `Thread.sleep` 拖慢单测。
+- 实现（与计划的差异：工具表在构造时一次性建好，无法按请求注入 remaining，改用 ThreadLocal）：
+  1. 新增 `TaskDeadline`（ThreadLocal）：`run()` 入口 `set(deadline)`、`finally clear()`；未设置时 `remainingMillis()` 返回 `Long.MAX_VALUE`（各层退回固定超时）。
+  2. `callLlm`：`future.get(min(llmTimeout, remaining), MILLISECONDS)`；剩余先耗尽 → `TaskTimeoutException`，否则才是 `LlmTimeoutException`。
+  3. `TimeoutToolCallback.call()`：`budget = min(toolTimeout, remaining)`；`budget ≤ 0` 时不提交工具、直接返回"任务总时限已用尽"并记 `TOOL_TIMEOUT`。
+  4. 新增 errorCode `TASK_TIMEOUT`（总时限，`status=TIMEOUT`）；deadline 与 `maxSteps` 同时命中时 deadline 优先。
+- 验收（4 个新用例全过，与既有用例合计 16/16）：
+  - `TaskDeadlineTest`：① 无 deadline 不设限；② 剩余 400ms 时 3s 工具在 <2s 内被截断；③ 预算已耗尽时不执行工具；④ 预算充足时仍用配置超时。
+  - 命令：`mvn -s maven-settings.xml -f demo/java-mcp-client/pom.xml -Dtest="TaskDeadlineTest,TaskDegradationTest,TimeoutToolCallbackTest,CircuitBreakingToolCallbackTest" test`
+- 风险（已处理）：`TaskOrchestratorTest` 签名未变；新用例纯单测，不依赖网络/模型。
 
 **W2 有界线程池 + 并发闸门（P0）**
 - 问题：两个池无界，`cancel(true)` 拦不住阻塞的 MCP 调用，慢服务叠加并发会堆线程/连接。
@@ -199,6 +198,13 @@ python demo/eval/run_eval.py --rescore demo/eval/results/<runId>
 ---
 
 ## 8. 日志（倒序）
+
+### 2026-11-14 · v1.1 W1 完成：任务总时限变成硬约束
+
+- **背景**：v1.0 已冻结并推到 GitHub（`master` + tag `v1.0`），v1.1 在 `v1.1-reliability` 分支开工。
+- **改了什么**：新增 `TaskDeadline`（ThreadLocal，`run()` 设置、`finally` 清理）；`callLlm` 取 `min(llmTimeout, remaining)`；`TimeoutToolCallback` 取 `min(toolTimeout, remaining)`，预算耗尽时不提交调用；新增 `TASK_TIMEOUT`（`status=TIMEOUT`），与单工具 `TOOL_TIMEOUT` 区分；LLM 超时按"剩余是否耗尽"分流到 `TaskTimeoutException` / `LlmTimeoutException`。
+- **验证**：`TaskDeadlineTest` 4 个用例 + 既有 12 个 = 16/16（命令见 §3.1 W1）；本轮未起服务、未跑集成（`TaskOrchestratorTest` 需 8001/8002/8003）。
+- **注意**：总超时仍是"协作式"——`future.cancel(true)` 拦不住不响应中断的阻塞调用；真正的线程/连接上限靠 W2 的有界池解决。
 
 ### 2026-11-14 · v1.1 可靠性评审与收口计划
 
