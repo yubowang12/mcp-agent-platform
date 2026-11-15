@@ -92,7 +92,12 @@
   - 并发脚本：20 个并发 `/api/task`，8 个 200、其余 503，线程数不随请求线性增长；
   - 现有超时/熔断单测全过。
 - **已验**：`TaskConcurrencyLimiterTest`（3）+ `TimeoutToolCallbackTest` 新增 `saturatedPoolReturnsBusyImmediately` + 既有 16 个 = 20/20；再加 `TaskControllerConcurrencyTest`（2，standalone MockMvc：满闸门 → 503 + `Retry-After: 1`，成功请求归还许可）= **22/22** 通过（`mvn ... -Dtest="TaskConcurrencyLimiterTest,TimeoutToolCallbackTest,TaskDeadlineTest,CircuitBreakingToolCallbackTest,TaskDegradationTest" test`），未起服务。
-- **待验**：20 并发 `/api/task` 的 200/503 分布（需 8001/8002/8003 在线）；`NoToolsAvailableTest` 的 `PlannerProperties` 已补 9 参。
+- **实测（2026-11-15，8001/8002/8003/8090 全起）**：
+  - 20 并发 `/api/task` → **8×200 + 12×503**（全部带 `Retry-After: 1`）；200 p50 1441ms / p95 2105ms，503 p50 ~380ms（拒绝不排队）。
+  - 50 并发 → **8×200 + 42×503**；503 p50 193ms。
+  - trace：两轮共 16 条，全部 `status=OK`、无 `OVERLOAD`；503 请求不进编排、不落 trace。
+  - 线程数：空闲 75，20 并发峰值 142，50 并发峰值 113 —— 不随并发线性增长。
+- **实测抓到的启动 bug（已修）**：有界池 `keepAlive=0` + `allowCoreThreadTimeOut(true)` 抛 `IllegalArgumentException: Core threads must have nonzero keep alive times`，应用起不来；改为 60s keep-alive。`NoToolsAvailableTest` 复跑 1/1，证明该类构造路径已被测试覆盖。`NoToolsAvailableTest` 的 `PlannerProperties` 已补 9 参。
 - 风险：503 会让"无脑并发"的脚本失败（串行 eval 不受影响）；默认并发别压到 1。
 
 **W3 Trace 真实性（P1）**

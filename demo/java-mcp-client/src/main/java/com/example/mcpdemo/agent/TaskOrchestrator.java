@@ -170,7 +170,7 @@ public class TaskOrchestrator {
     private static ExecutorService boundedPool(String name, int size, int queueSize) {
         AtomicInteger seq = new AtomicInteger();
         ThreadPoolExecutor pool = new ThreadPoolExecutor(
-                Math.max(1, size), Math.max(1, size), 0L, TimeUnit.MILLISECONDS,
+                Math.max(1, size), Math.max(1, size), 60L, TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(Math.max(1, queueSize)),
                 r -> {
                     Thread t = new Thread(r, name + "-" + seq.incrementAndGet());
