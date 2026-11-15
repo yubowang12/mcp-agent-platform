@@ -14,7 +14,7 @@
 | 项目定位 | **求职作品集**（Agent 开发 / 后端实习），毕业设计只是可能用途之一 |
 | 阶段 | **阶段一（M1~M6）已完成**；**记忆层 v1 已实现、已拆包、功能复核完成**（A1~A5/A7/A8 通过；**A6 已于 2026-11-10 按方案 b 修复**）；**RAG v1 已实施，R1~R8 待评审**；**2026-11-14 完成可靠性评审；v1.1 收口进行中（W1/W2 已完成，§3.1）** |
 | 架构 | Java（Spring AI）规划型 Host `:8090` + Python MCP 服务（工具 `:8001`、Agent `:8002`、RAG `:8003`）+ DashScope `qwen-plus` |
-| 测试 | **80/80**（77 单测 + 3 集成），跑在 `qwen-plus` 上；W1/W2 只跑了相关子集，见 §3.1 |
+| 测试 | **82/82**（79 单测 + 3 集成），跑在 `qwen-plus` 上；W1/W2 只跑了相关子集，见 §3.1 |
 | 评测 | 30 条任务集：严格 25/30（83.3%）、宽松 27/30（90%）。⚠️ 这是 **Ollama 基线**，换模型后未重跑 |
 | 文档 | 13 份（见第 6 节） |
 | 未提交 | 无（最新提交 `70f7327`，v1.1 W1；W2 待提交） |
@@ -91,7 +91,7 @@
   - 单测：池满时第 N+1 次调用 ≤100ms 返回"繁忙"，不阻塞；
   - 并发脚本：20 个并发 `/api/task`，8 个 200、其余 503，线程数不随请求线性增长；
   - 现有超时/熔断单测全过。
-- **已验**：`TaskConcurrencyLimiterTest`（3）+ `TimeoutToolCallbackTest` 新增 `saturatedPoolReturnsBusyImmediately` + 既有 16 个 = 20/20 通过（`mvn ... -Dtest="TaskConcurrencyLimiterTest,TimeoutToolCallbackTest,TaskDeadlineTest,CircuitBreakingToolCallbackTest,TaskDegradationTest" test`），未起服务。
+- **已验**：`TaskConcurrencyLimiterTest`（3）+ `TimeoutToolCallbackTest` 新增 `saturatedPoolReturnsBusyImmediately` + 既有 16 个 = 20/20；再加 `TaskControllerConcurrencyTest`（2，standalone MockMvc：满闸门 → 503 + `Retry-After: 1`，成功请求归还许可）= **22/22** 通过（`mvn ... -Dtest="TaskConcurrencyLimiterTest,TimeoutToolCallbackTest,TaskDeadlineTest,CircuitBreakingToolCallbackTest,TaskDegradationTest" test`），未起服务。
 - **待验**：20 并发 `/api/task` 的 200/503 分布（需 8001/8002/8003 在线）；`NoToolsAvailableTest` 的 `PlannerProperties` 已补 9 参。
 - 风险：503 会让"无脑并发"的脚本失败（串行 eval 不受影响）；默认并发别压到 1。
 
@@ -216,7 +216,7 @@ python demo/eval/run_eval.py --rescore demo/eval/results/<runId>
   - 新增 `TaskConcurrencyLimiter`（公平 `Semaphore`）与 `TaskBusyException`：`/api/task` 超并发上限直接 **503 + `Retry-After: 1`**，`finally` 释放。
   - 配置：`mcp.planner.{llm-pool-size:8, llm-queue:32, tool-pool-size:16, tool-queue:64, max-concurrent-tasks:8}`。
   - Python：`demo/py-agent/agent.py:69`、`demo/py-rag-server/config.py:86` 的 `OpenAI(...)` 显式 `timeout=60, max_retries=1`。
-- **验证**：`TaskConcurrencyLimiterTest`（3）+ `TimeoutToolCallbackTest` 新增池满用例 + 既有 16 个 = **20/20**；未起服务、未跑集成。
+- **验证**：`TaskConcurrencyLimiterTest`（3）+ `TimeoutToolCallbackTest` 新增池满用例 + 既有 16 个 = 20/20；另加 `TaskControllerConcurrencyTest`（2）覆盖 503/`Retry-After` 契约，合计 **22/22**。未起服务、未跑集成。
 - **注意**：503 是"拒绝"不是"失败"，压测脚本要按 503 统计；串行 eval 不受影响。20 并发下 200/503 的分布待服务起来后补测。
 
 

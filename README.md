@@ -18,7 +18,7 @@
 | **硬超时 + 有界并发**：任务总时限向下传给每次 LLM/工具调用；两个线程池有界，入口 `Semaphore` 闸门满了直接 503 + `Retry-After`，慢调用不堆线程 | `TASK_TIMEOUT` / `OVERLOAD` 进 trace；`TaskDeadlineTest` + `TaskConcurrencyLimiterTest`；`mcp.planner.*-pool-size`、`max-concurrent-tasks` 可配 |
 | **结构化 trace 与降级口径**：每请求一条 JSONL，`status`/`errorCode`/`degradedSteps` 可归因 | `demo/logs/trace/*.jsonl`、`TaskTrace` |
 | **可复现评测**：30 条任务集 + 批跑脚本 + 严格/宽松成功率 + P50/P95 + 失败模式分布 | `demo/eval/RESULTS.md`（B-dual 严格 25/30，**Ollama 基线**，qwen-plus 待重跑）；`--rescore` 支持口径复算 |
-| **工程完整度**：80 个测试（77 单测 + 3 集成）、配置外置、密钥不入库、一条命令起全套服务 | `mvn test` 80/80；`demo/start-dev.ps1` |
+| **工程完整度**：82 个测试（79 单测 + 3 集成）、配置外置、密钥不入库、一条命令起全套服务 | `mvn test` 82/82；`demo/start-dev.ps1` |
 
 ## 当前进度
 
@@ -128,7 +128,7 @@ mvn -s maven-settings.xml -f demo/java-mcp-client/pom.xml test
 2026-11-11 记录：全量 **72/72** 通过（69 个纯单测 + 3 个集成用例），trace 见 `demo/logs/trace/`。其中：
 `CircuitBreakerTest`（8）验状态机；`CircuitBreakingToolCallbackTest`（5）验熔断包装器；`TimeoutToolCallbackTest`（3）验失败判定；`TaskDegradationTest`（4）验 `DEGRADED` 规则；`NoToolsAvailableTest`（1）无工具场景；记忆层 48 个（短期仓储/抽取/召回/向量/提示词/降级/遗忘）；`TaskOrchestratorTest`（3）集成回归。
 
-2026-11-14（v1.1 W1）：新增 `TaskDeadlineTest`（4）验总时限预算；2026-11-15（W2）：新增 `TaskConcurrencyLimiterTest`（3）与工具池满用例（1），测试总数 80（77 单测 + 3 集成）。两轮都只跑了相关子集（16/16、20/20），全量待 8001/8002/8003 起来后重跑。
+2026-11-14（v1.1 W1）：新增 `TaskDeadlineTest`（4）验总时限预算；2026-11-15（W2）：新增 `TaskConcurrencyLimiterTest`（3）与工具池满用例（1），测试总数 82（79 单测 + 3 集成）。两轮都只跑了相关子集（16/16、22/22），全量待 8001/8002/8003 起来后重跑。
 
 ## 文档索引
 
