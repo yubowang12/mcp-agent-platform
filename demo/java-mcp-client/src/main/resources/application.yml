@@ -8,6 +8,12 @@ mcp:
     task-timeout-seconds: 300
     llm-timeout-seconds: 60
     tool-timeout-seconds: 45
+    # W2：有界线程池 + 入口并发闸门（满了直接 503，不再无界堆线程）
+    llm-pool-size: 8
+    llm-queue: 32
+    tool-pool-size: 16
+    tool-queue: 64
+    max-concurrent-tasks: 8
   circuit:             # M5：熔断（连续失败 N 次打开，冷却后只放 1 个探测请求）
     failure-threshold: 3
     open-seconds: 30

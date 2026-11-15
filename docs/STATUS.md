@@ -3,7 +3,7 @@
 > **这是"换会话 / 换 agent"的入口文档。** 30 秒读完：项目是什么、现在到哪、下一步做什么、怎么跑、材料在哪。
 >
 > 维护约定：每天结束时在「日志」顶部加一条（模板在文末），状态表有变化就一起改。
-> 最近更新：2026-11-14
+> 最近更新：2026-11-15
 
 ---
 
@@ -12,18 +12,18 @@
 | 项 | 状态 |
 |---|---|
 | 项目定位 | **求职作品集**（Agent 开发 / 后端实习），毕业设计只是可能用途之一 |
-| 阶段 | **阶段一（M1~M6）已完成**；**记忆层 v1 已实现、已拆包、功能复核完成**（A1~A5/A7/A8 通过；**A6 已于 2026-11-10 按方案 b 修复**）；**RAG v1 已实施，R1~R8 待评审**；**2026-11-14 完成可靠性评审，v1.1 收口待实施（§3.1）** |
+| 阶段 | **阶段一（M1~M6）已完成**；**记忆层 v1 已实现、已拆包、功能复核完成**（A1~A5/A7/A8 通过；**A6 已于 2026-11-10 按方案 b 修复**）；**RAG v1 已实施，R1~R8 待评审**；**2026-11-14 完成可靠性评审；v1.1 收口进行中（W1/W2 已完成，§3.1）** |
 | 架构 | Java（Spring AI）规划型 Host `:8090` + Python MCP 服务（工具 `:8001`、Agent `:8002`、RAG `:8003`）+ DashScope `qwen-plus` |
-| 测试 | **76/76**（73 单测 + 3 集成），跑在 `qwen-plus` 上 |
+| 测试 | **80/80**（77 单测 + 3 集成），跑在 `qwen-plus` 上；W1/W2 只跑了相关子集，见 §3.1 |
 | 评测 | 30 条任务集：严格 25/30（83.3%）、宽松 27/30（90%）。⚠️ 这是 **Ollama 基线**，换模型后未重跑 |
 | 文档 | 13 份（见第 6 节） |
-| 未提交 | 无（最新提交 `5d6d62c`，RAG v1） |
+| 未提交 | 无（最新提交 `70f7327`，v1.1 W1；W2 待提交） |
 
 ## 2. 现在在做什么
 
 - **2026-11-14 完成 v1.1 可靠性评审**（外部评审 + 本会话逐条复核）：采纳 8 条、修正 3 条、降级 2 条；结论是「骨架正确、五条基础链路（超时 / 身份 / 目录 / Trace / 证据）未收口」，**不再加能力**；
 - **修改方案已拆成任务包**：见 §3.1（W1~W7，含问题、改法、文件、验收命令、风险），按 W1→W2→W3→W4→W5→W6/W7 交实施会话；
-- **下一步**：先做 W1+W2（总时限 + 有界线程池），再 W3/W4；W5 用 `qwen-plus` 重跑 30 条并补人工抽检。RAG v2（rerank / 阈值）等 W5 的 RAG 专项数据出来再定。
+- **已完成 W1（总时限）+ W2（有界池与并发闸门，2026-11-15）**；**下一步 W3（Trace 真实性）→ W4（RAG 契约）**；W5 用 `qwen-plus` 重跑 30 条并补人工抽检。RAG v2（rerank / 阈值）等 W5 的 RAG 专项数据出来再定。
 
 ## 3. 待办（按优先级）
 
@@ -74,17 +74,25 @@
   - 命令：`mvn -s maven-settings.xml -f demo/java-mcp-client/pom.xml -Dtest="TaskDeadlineTest,TaskDegradationTest,TimeoutToolCallbackTest,CircuitBreakingToolCallbackTest" test`
 - 风险（已处理）：`TaskOrchestratorTest` 签名未变；新用例纯单测，不依赖网络/模型。
 
-**W2 有界线程池 + 并发闸门（P0）**
+**W2 有界线程池 + 并发闸门（P0）— ✅ 已完成（2026-11-15）**
 - 问题：两个池无界，`cancel(true)` 拦不住阻塞的 MCP 调用，慢服务叠加并发会堆线程/连接。
 - 改法：
   1. 两个池改 `ThreadPoolExecutor(core=max=N, 有界队列, AbortPolicy)`，配置：`mcp.planner.llm-pool-size=8`、`llm-queue=32`、`tool-pool-size=16`、`tool-queue=64`；`@PreDestroy` 优雅关闭。
   2. 拒绝策略：LLM → 抛 `LlmOverloadedException` → `status=ERROR, errorCode=OVERLOAD`；工具 → 返回"系统繁忙"文本 + `TOOL_ERROR`（或新增 `OVERLOAD`）。
   3. 入口闸门：`TaskController` 用 `Semaphore(max-concurrent-tasks=8)`，`tryAcquire` 失败立即 503 + `Retry-After`（可配 `mcp.planner.max-concurrent-tasks`）。
   4. Python 侧：`agent.py` / `ingest.py` 的 `OpenAI(...)` 显式 `timeout=60, max_retries=1`（默认 600s 太长）。
+- **实施记录（2026-11-15）**：
+  - `PlannerProperties` 加 `llmPoolSize / llmQueue / toolPoolSize / toolQueue / maxConcurrentTasks`，默认 8/32/16/64/8；`application.yml` 同步。
+  - `TaskOrchestrator`：静态 `cachedThreadPool` 换成实例级 `boundedPool(...)`（core=max、`ArrayBlockingQueue`、`AbortPolicy`、守护线程、`allowCoreThreadTimeOut`），`@PreDestroy shutdownPools()`；工具池注入 `TimeoutToolCallback`，生产与测试共用同一有界池。
+  - `TimeoutToolCallback` 新增 3 参构造（外部注入池）；2 参构造保留，用静态有界默认池（16/64），单测与旧调用方不受影响。池/队列满 → 立即返回「系统繁忙（工具调用并发已满），请稍后重试。」并记 `TOOL_ERROR`。
+  - `TaskConcurrencyLimiter`（新，`@Component`）：公平 `Semaphore(capacity)`，`tryEnter/exit/inFlight/capacity`；`TaskController` 校验参数后 `tryEnter`，失败抛 `TaskBusyException`（503 + `Retry-After: 1`），`finally exit()`。
+  - Python：`demo/py-agent/agent.py:69` 与 `demo/py-rag-server/config.py:86` 的 `OpenAI(...)` 都加 `timeout=60, max_retries=1`。
 - 验收：
   - 单测：池满时第 N+1 次调用 ≤100ms 返回"繁忙"，不阻塞；
   - 并发脚本：20 个并发 `/api/task`，8 个 200、其余 503，线程数不随请求线性增长；
   - 现有超时/熔断单测全过。
+- **已验**：`TaskConcurrencyLimiterTest`（3）+ `TimeoutToolCallbackTest` 新增 `saturatedPoolReturnsBusyImmediately` + 既有 16 个 = 20/20 通过（`mvn ... -Dtest="TaskConcurrencyLimiterTest,TimeoutToolCallbackTest,TaskDeadlineTest,CircuitBreakingToolCallbackTest,TaskDegradationTest" test`），未起服务。
+- **待验**：20 并发 `/api/task` 的 200/503 分布（需 8001/8002/8003 在线）；`NoToolsAvailableTest` 的 `PlannerProperties` 已补 9 参。
 - 风险：503 会让"无脑并发"的脚本失败（串行 eval 不受影响）；默认并发别压到 1。
 
 **W3 Trace 真实性（P1）**
@@ -198,6 +206,19 @@ python demo/eval/run_eval.py --rescore demo/eval/results/<runId>
 ---
 
 ## 8. 日志（倒序）
+
+### 2026-11-15 · v1.1 W2 完成：有界线程池 + 入口并发闸门
+
+- **背景**：W1 只让调用方"不再等"，被取消的调用仍占着线程；慢服务叠加并发会无界堆线程/连接。
+- **改了什么**：
+  - `TaskOrchestrator` 的两个静态 `cachedThreadPool` 换成实例级有界池（`core=max=N` + `ArrayBlockingQueue` + `AbortPolicy` + 守护线程 + `allowCoreThreadTimeOut`），`@PreDestroy` 关闭；工具池注入给所有 `TimeoutToolCallback`。
+  - LLM 池/队列满 → `LlmOverloadedException` → `status=ERROR, errorCode=OVERLOAD`（不排队不重试）；工具池满 → 立即返回「系统繁忙」+ `TOOL_ERROR`。
+  - 新增 `TaskConcurrencyLimiter`（公平 `Semaphore`）与 `TaskBusyException`：`/api/task` 超并发上限直接 **503 + `Retry-After: 1`**，`finally` 释放。
+  - 配置：`mcp.planner.{llm-pool-size:8, llm-queue:32, tool-pool-size:16, tool-queue:64, max-concurrent-tasks:8}`。
+  - Python：`demo/py-agent/agent.py:69`、`demo/py-rag-server/config.py:86` 的 `OpenAI(...)` 显式 `timeout=60, max_retries=1`。
+- **验证**：`TaskConcurrencyLimiterTest`（3）+ `TimeoutToolCallbackTest` 新增池满用例 + 既有 16 个 = **20/20**；未起服务、未跑集成。
+- **注意**：503 是"拒绝"不是"失败"，压测脚本要按 503 统计；串行 eval 不受影响。20 并发下 200/503 的分布待服务起来后补测。
+
 
 ### 2026-11-14 · v1.1 W1 完成：任务总时限变成硬约束
 

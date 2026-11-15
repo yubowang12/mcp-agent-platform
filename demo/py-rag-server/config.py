@@ -83,5 +83,5 @@ def client():
     if _client is None:
         from openai import OpenAI
 
-        _client = OpenAI(base_url=LLM_BASE_URL, api_key=require_api_key())
+        _client = OpenAI(base_url=LLM_BASE_URL, api_key=require_api_key(), timeout=60, max_retries=1)  # W2：显式超时，避免 ingest/切块长时间挂住
     return _client

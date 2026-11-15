@@ -3,9 +3,11 @@ package com.example.mcpdemo.agent;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
 
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -27,21 +29,32 @@ import java.util.concurrent.TimeoutException;
  */
 public class TimeoutToolCallback implements ToolCallback {
 
-    /** 超时隔离线程池：守护线程，卡住的工具调用不会拖住 JVM 退出。 */
-    private static final ExecutorService POOL = Executors.newCachedThreadPool(r -> {
-        Thread t = new Thread(r, "tool-timeout");
-        t.setDaemon(true);
-        return t;
-    });
+    /** 默认超时隔离池（单测与旧调用方用）：W2 起有界，满了直接返回"繁忙"，不再无界堆线程。 */
+    private static final ExecutorService DEFAULT_POOL = new ThreadPoolExecutor(
+            16, 16, 0L, TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<>(64),
+            r -> {
+                Thread t = new Thread(r, "tool-timeout");
+                t.setDaemon(true);
+                return t;
+            },
+            new ThreadPoolExecutor.AbortPolicy());
 
     /** 被包装的内层回调（通常是某个 MCP 工具）。 */
     private final ToolCallback delegate;
     /** 单次工具调用超时（秒），来自 {@code mcp.planner.tool-timeout-seconds}。 */
     private final long timeoutSeconds;
+    /** 执行工具调用的隔离池（生产环境由编排器注入共享的有界池）。 */
+    private final ExecutorService pool;
 
     public TimeoutToolCallback(ToolCallback delegate, long timeoutSeconds) {
+        this(delegate, timeoutSeconds, DEFAULT_POOL);
+    }
+
+    public TimeoutToolCallback(ToolCallback delegate, long timeoutSeconds, ExecutorService pool) {
         this.delegate = delegate;
         this.timeoutSeconds = timeoutSeconds;
+        this.pool = pool;
     }
 
     @Override
@@ -64,10 +77,14 @@ public class TimeoutToolCallback implements ToolCallback {
 
         Future<String> future = null;
         try {
-            future = POOL.submit(() -> delegate.call(toolInput));
+            future = pool.submit(() -> delegate.call(toolInput));
             String result = future.get(budgetMillis, TimeUnit.MILLISECONDS);
             record(toolName, start, true, null);
             return result;
+        } catch (RejectedExecutionException e) {
+            // W2：池和队列都满 → 立即返回"繁忙"，不阻塞规划循环
+            record(toolName, start, false, ToolCallRecorder.TOOL_ERROR);
+            return "系统繁忙（工具调用并发已满），请稍后重试。";
         } catch (TimeoutException e) {
             if (future != null) {
                 future.cancel(true);

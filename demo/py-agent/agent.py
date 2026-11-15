@@ -66,7 +66,7 @@ if not LLM_API_KEY:
         "  3) 启动时设置 LLM_API_KEY" % LOCAL_YML
     )
 
-client = OpenAI(base_url=LLM_BASE_URL, api_key=LLM_API_KEY)
+client = OpenAI(base_url=LLM_BASE_URL, api_key=LLM_API_KEY, timeout=60, max_retries=1)  # W2：默认 600s 太长，卡住会占满 Host 的工具池
 
 mcp = MCPServer("agent-worker")
 

@@ -32,17 +32,22 @@ import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import jakarta.annotation.PreDestroy;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 /**
@@ -57,12 +62,10 @@ import java.util.stream.Collectors;
 @Slf4j
 public class TaskOrchestrator {
 
-    /** LLM 调用线程池：用于实现单次 LLM 调用的超时保护。 */
-    private static final ExecutorService LLM_POOL = Executors.newCachedThreadPool(r -> {
-        Thread t = new Thread(r, "llm-call");
-        t.setDaemon(true);
-        return t;
-    });
+    /** LLM 调用线程池：W2 起是有界池（大小/队列来自配置），满了直接拒绝。 */
+    private final ExecutorService llmPool;
+    /** 工具调用线程池：W2 起有界，与所有 {@link TimeoutToolCallback} 共享。 */
+    private final ExecutorService toolPool;
 
     private static final String SYSTEM_PROMPT_TEMPLATE = """
             你是 Agent 集群的调度器。任务：
@@ -115,6 +118,10 @@ public class TaskOrchestrator {
         this.props = props;
         this.circuitBreakers = circuitBreakers;
         this.memory = memory;
+        // W2：两个池都改成有界（core=max=N + 有界队列 + AbortPolicy）。
+        // 无界 cachedThreadPool 在慢服务叠加并发时会一直堆线程，超时只是不再等它，线程并没消失。
+        this.llmPool = boundedPool("llm-call", props.llmPoolSize(), props.llmQueue());
+        this.toolPool = boundedPool("tool-timeout", props.toolPoolSize(), props.toolQueue());
         // 先建“前缀 -> server 名”映射：给工具包熔断器时要按 server 取熔断器
         Map<String, String> serverNames = new LinkedHashMap<>();
         for (McpSyncClient client : mcpClients) {
@@ -134,7 +141,7 @@ public class TaskOrchestrator {
         List<ToolCallback> allTools = new ArrayList<>();
         for (ToolCallback callback : mcpTools) {
             String prefixedName = callback.getToolDefinition().name();
-            ToolCallback withTimeout = new TimeoutToolCallback(callback, props.toolTimeoutSeconds());
+            ToolCallback withTimeout = new TimeoutToolCallback(callback, props.toolTimeoutSeconds(), toolPool);
             allTools.add(new CircuitBreakingToolCallback(
                     withTimeout, circuitBreakers.get(serverKeyOf(prefixedName))));
         }
@@ -159,11 +166,33 @@ public class TaskOrchestrator {
                 circuitBreakers, AgentMemory.disabled());
     }
 
+    /** 有界池：core=max=size、有界队列、AbortPolicy；线程为守护线程，空闲可回收。 */
+    private static ExecutorService boundedPool(String name, int size, int queueSize) {
+        AtomicInteger seq = new AtomicInteger();
+        ThreadPoolExecutor pool = new ThreadPoolExecutor(
+                Math.max(1, size), Math.max(1, size), 0L, TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(Math.max(1, queueSize)),
+                r -> {
+                    Thread t = new Thread(r, name + "-" + seq.incrementAndGet());
+                    t.setDaemon(true);
+                    return t;
+                },
+                new ThreadPoolExecutor.AbortPolicy());
+        pool.allowCoreThreadTimeOut(true);
+        return pool;
+    }
+
+    /** 容器关闭时停止接受新任务；已在跑的任务由 deadline/超时兜底，不无限等待。 */
+    @PreDestroy
+    public void shutdownPools() {
+        llmPool.shutdownNow();
+        toolPool.shutdownNow();
+    }
+
     /**
      * 执行一次任务。
      */
-    public TaskTrace run(TaskContext ctx) {
-        ctx.setState(AgentState.RUNNING);
+    public TaskTrace run(TaskContext ctx) {        ctx.setState(AgentState.RUNNING);
         // 记忆层 v1（第 1 步）：同一 sessionId 先把历史消息读回来，再接本次任务
         List<Message> history = memory.history(ctx.getConversationId());
         if (!history.isEmpty()) {
@@ -319,6 +348,12 @@ public class TaskOrchestrator {
             ctx.setStatus(TaskStatus.TIMEOUT);
             ctx.setErrorCode("LLM_TIMEOUT");
             ctx.setErrorMessage("规划 LLM 调用超时（" + props.llmTimeoutSeconds() + "s）");
+        } catch (LlmOverloadedException e) {
+            // W2：不排队、不重试，立即失败并把"繁忙"写进 trace
+            ctx.setState(AgentState.ERROR);
+            ctx.setStatus(TaskStatus.ERROR);
+            ctx.setErrorCode("OVERLOAD");
+            ctx.setErrorMessage("系统繁忙：LLM 调用并发已满，请稍后重试");
         } catch (Exception e) {
             ctx.setState(AgentState.ERROR);
             ctx.setStatus(TaskStatus.ERROR);
@@ -349,8 +384,14 @@ public class TaskOrchestrator {
             throw new TaskTimeoutException();
         }
         long effectiveMillis = Math.min(props.llmTimeoutSeconds() * 1000L, budgetMillis);
-        Future<ChatResponse> future = LLM_POOL.submit(() ->
-                chatClient.prompt(prompt).system(systemPrompt(maxSteps, memorySection)).call().chatResponse());
+        Future<ChatResponse> future;
+        try {
+            future = llmPool.submit(() ->
+                    chatClient.prompt(prompt).system(systemPrompt(maxSteps, memorySection)).call().chatResponse());
+        } catch (RejectedExecutionException e) {
+            // W2：池 + 队列都满 → 立即失败，不排队干等
+            throw new LlmOverloadedException();
+        }
         try {
             return future.get(effectiveMillis, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
@@ -365,6 +406,10 @@ public class TaskOrchestrator {
 
     /** 规划 LLM 调用超时。 */
     private static final class LlmTimeoutException extends RuntimeException {
+    }
+
+    /** W2：LLM 线程池与队列都已满（入口闸门之外的兜底）。 */
+    private static final class LlmOverloadedException extends RuntimeException {
     }
 
     /**

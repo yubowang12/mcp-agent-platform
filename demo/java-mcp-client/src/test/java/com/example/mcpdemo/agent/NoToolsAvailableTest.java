@@ -58,7 +58,7 @@ class NoToolsAvailableTest {
                 List.of(),
                 (connection, tool) -> "noop_" + tool.name(),
                 new TraceRecorder(new ObjectMapper(), traceDir),
-                new PlannerProperties("qwen2.5:3b", 120, 60, 45),
+                new PlannerProperties("qwen2.5:3b", 120, 60, 45, 8, 32, 16, 64, 8),
                 new CircuitBreakerRegistry(new CircuitBreakerProperties(3, 30, 1)));
 
         TaskTrace trace = orchestrator.run(new TaskContext("no-tools", "你好", 3));

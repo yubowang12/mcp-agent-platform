@@ -6,6 +6,10 @@ import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
 
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -63,6 +67,36 @@ class TimeoutToolCallbackTest {
         ToolCallRecorder.CallRecord record = ToolCallRecorder.drain().get(0);
         assertFalse(record.ok());
         assertEquals(ToolCallRecorder.TOOL_TIMEOUT, record.errorCode());
+    }
+
+    @Test
+    void saturatedPoolReturnsBusyImmediately() throws Exception {
+        // 单线程 + SynchronousQueue：线程被占住后，第二次提交必定被 AbortPolicy 拒绝
+        ExecutorService oneSlot = new ThreadPoolExecutor(
+                1, 1, 0L, TimeUnit.MILLISECONDS, new SynchronousQueue<>());
+        try {
+            oneSlot.submit(() -> {
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+            TimeoutToolCallback callback = new TimeoutToolCallback(returning("add", "4.0"), 5, oneSlot);
+
+            long start = System.nanoTime();
+            String output = callback.call("{}");
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+
+            assertTrue(output.contains("系统繁忙"), output);
+            assertTrue(elapsedMs < 100, "池满应立刻返回，实际 " + elapsedMs + "ms");
+
+            ToolCallRecorder.CallRecord record = ToolCallRecorder.drain().get(0);
+            assertFalse(record.ok());
+            assertEquals(ToolCallRecorder.TOOL_ERROR, record.errorCode());
+        } finally {
+            oneSlot.shutdownNow();
+        }
     }
 
     private static ToolCallback returning(String name, String result) {
